@@ -41,3 +41,11 @@ jobs:
 
       - name: Executa a CLI
         run: node dist/cli.js --version && node dist/cli.js --help
+
+      - name: Empacota e executa o pacote com npx
+        run: |
+          npm pack --silent
+          pacote="$PWD/$(ls leis-mcp-*.tgz)"
+          cd "$(mktemp -d)"
+          npm exec --yes --package="$pacote" -- leis-mcp --version
+          npx -y "$pacote" --version

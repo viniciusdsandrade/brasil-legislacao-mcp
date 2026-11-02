@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publicar:
+    name: Pacote e release
+    runs-on: ubuntu-latest
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Instala o ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Instala as dependências
+        run: npm ci
+
+      - name: Confere a versão da tag
+        run: |
+          versao="$(node -p "require('./package.json').version")"
+          if [ "v${versao}" != "${GITHUB_REF_NAME}" ]; then
+            echo "A tag ${GITHUB_REF_NAME} não corresponde à versão ${versao} do package.json." >&2
+            exit 1
+          fi
+
+      - name: Typecheck e testes
+        run: npm run typecheck && npm test
+
+      - name: Empacota e executa o pacote com npx
+        run: |
+          npm pack --silent
+          pacote="$PWD/leis-mcp-${GITHUB_REF_NAME#v}.tgz"
+          cd "$(mktemp -d)"
+          npx -y "$pacote" --version
+
+      - name: Cria a release com o pacote
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          arquivo="leis-mcp-${GITHUB_REF_NAME#v}.tgz"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${arquivo}"
+          {
+            echo "Pacote do leis-mcp ${GITHUB_REF_NAME}."
+            echo
+            echo "Use com npx:"
+            echo
+            echo '```sh'
+            echo "LEIS_ESCOPO=constituicao,federal npx -y ${url} sync"
+            echo "npx -y ${url} serve"
+            echo '```'
+            echo
+            echo "As instruções de cada cliente MCP estão na pasta clients do repositório."
+          } > notas.md
+          gh release create "$GITHUB_REF_NAME" "$arquivo" --title "leis-mcp ${GITHUB_REF_NAME}" --notes-file notas.md --verify-tag
+
+      - name: Executa o pacote da release com npx
+        run: |
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/leis-mcp-${GITHUB_REF_NAME#v}.tgz"
+          cd "$(mktemp -d)"
+          npx -y "$url" --version
+
+      - name: Publica no registro do npm
+        if: ${{ env.NPM_TOKEN != '' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public
