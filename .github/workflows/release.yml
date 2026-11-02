@@ -45,7 +45,8 @@ jobs:
           npm pack --silent
           pacote="$PWD/leis-mcp-${GITHUB_REF_NAME#v}.tgz"
           cd "$(mktemp -d)"
-          npx -y "$pacote" --version
+          npm exec --yes --package="$pacote" -- leis-mcp --version
+          npx -y "file:$pacote" --version
 
       - name: Cria a release com o pacote
         env:
