@@ -33,8 +33,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Build
+        run: npm run build
+
       - name: Testes
         run: npm test
 
-      - name: Build
-        run: npm run build
+      - name: Executa a CLI
+        run: node dist/cli.js --version && node dist/cli.js --help
