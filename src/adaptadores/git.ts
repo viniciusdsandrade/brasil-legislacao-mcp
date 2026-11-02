@@ -182,6 +182,8 @@ export class GitLocal implements RepositorioGit {
       'log',
       '--no-renames',
       '--diff-filter=A',
+      // Lista todos os arquivos do commit, não só os do pathspec: assim um lote nunca parece um commit de uma norma.
+      '--full-diff',
       '--grep=^Autoria:',
       `--format=${FORMATO_LOG_AUTORIA}`,
       '--name-only',

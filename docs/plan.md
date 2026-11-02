@@ -70,7 +70,7 @@ The first target client is Claude Code. Codex, Grok, Antigravity, GLM and other 
   2. Update with `git pull --ff-only`.
   3. Read the changes from the indexed commit to `HEAD` with `git diff --name-status --no-renames`.
   4. Index the changes in batches. Do not keep the full list in memory.
-  5. Read the authorship from the base commits with `git log --no-renames --diff-filter=A --grep=^Autoria:`.
+  5. Read the authorship from the base commits with `git log --no-renames --diff-filter=A --full-diff --grep=^Autoria:`.
   6. Write the new commit to the index only after all batches are done.
 - Check: a second sync without changes reports zero changes.
 

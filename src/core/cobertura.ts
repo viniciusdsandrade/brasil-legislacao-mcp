@@ -47,7 +47,7 @@ function celulas(linha: string): string[] | null {
 }
 
 function separador(partes: readonly string[]): boolean {
-  return partes.every((parte) => /^:?-{2,}:?$/.test(parte) || parte === '');
+  return partes.every((parte) => /^:?-+:?$/.test(parte) || parte === '');
 }
 
 /** "16.784" -> 16784; "~1.200" -> 1200; "desconhecida" -> null. */
@@ -107,7 +107,7 @@ export function lerCobertura(markdown: string): Cobertura {
     if (secao === 'Federal' && partes.length === 2 && partes[0] !== 'Tipo') {
       federal.push({ tipo: partes[0] ?? '', normas: numeroDaTabela(partes[1] ?? '') });
     }
-    if (partes.length >= 9 && /^[A-Z]{2}$/.test(partes[0] ?? '')) {
+    if (partes.length >= 9 && /^[A-Z]{2}$/.test(partes[0] ?? '') && partes[0] !== 'UF') {
       ufs.push({
         uf: partes[0] ?? '',
         normas: numeroDaTabela(partes[1] ?? ''),

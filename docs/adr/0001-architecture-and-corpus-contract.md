@@ -134,7 +134,7 @@ The parser finds articles (`Art.`, `Artigo`), paragraphs (`§`, `Parágrafo úni
 
 ### D11. Authorship
 
-`sync` reads only commits that add one norm file and have an `Autoria:` line. This excludes batch commits and the `Co-Authored-By` trailers of development tools. The index keeps the path of the base commit and the `fonte`. When the path does not exist at `HEAD`, the sync links the record to the norm with the same `fonte`. The dates in the result come from the header, never from the commit.
+`sync` reads only commits that add one norm file and have an `Autoria:` line. This excludes batch commits and the `Co-Authored-By` trailers of development tools. The sync uses `git log --full-diff`. Without it, git shows only the files in the scope, and a batch commit that adds files in two folders can look like a commit of one norm. The index keeps the path of the base commit and the `fonte`. When the path does not exist at `HEAD`, the sync links the record to the norm with the same `fonte`. The dates in the result come from the header, never from the commit.
 
 ### D12. Tool contract
 
