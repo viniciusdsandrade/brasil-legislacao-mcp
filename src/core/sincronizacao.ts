@@ -56,6 +56,14 @@ function mesmoConjunto(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((item) => b.includes(item));
 }
 
+/** Entradas que as duas listas cobrem. */
+function intersecao(a: readonly string[], b: readonly string[]): string[] {
+  return normalizarEscopo([
+    ...a.filter((entrada) => escopoCobre(b, pathspecDaEntrada(entrada))),
+    ...b.filter((entrada) => escopoCobre(a, pathspecDaEntrada(entrada))),
+  ]);
+}
+
 function ehArquivoDeFalhas(caminho: string): boolean {
   return caminho === '_falhas.jsonl' || caminho.endsWith('/_falhas.jsonl');
 }
@@ -95,20 +103,26 @@ class ProcessadorDeLotes {
     if (remover.length > 0) this.removidas += this.deps.gravador.removerNormas(remover);
     if (gravar.length > 0) {
       const registros: RegistroNorma[] = [];
+      const descartar: string[] = [];
       for (let i = 0; i < gravar.length; i += LEITURAS_SIMULTANEAS) {
         const fatia = gravar.slice(i, i + LEITURAS_SIMULTANEAS);
         const lidos = await Promise.all(
           fatia.map(async (caminho) => {
             const conteudo = await this.deps.leitor.ler(caminho);
-            if (conteudo === null) return null;
-            return registroDaNorma(caminho, conteudo, escopoCobre(this.corpo, caminho));
+            return { caminho, registro: conteudo === null ? null : registroDaNorma(caminho, conteudo, escopoCobre(this.corpo, caminho)) };
           }),
         );
-        for (const registro of lidos) {
-          if (registro === null) this.ignoradas += 1;
-          else registros.push(registro);
+        for (const { caminho, registro } of lidos) {
+          if (registro !== null) {
+            registros.push(registro);
+            continue;
+          }
+          // Arquivo ausente ou sem cabeçalho válido: a linha antiga do índice sai.
+          this.ignoradas += 1;
+          descartar.push(caminho);
         }
       }
+      if (descartar.length > 0) this.removidas += this.deps.gravador.removerNormas(descartar);
       this.deps.gravador.gravarNormas(registros);
       this.gravadas += registros.length;
       if (Math.floor((this.gravadas - registros.length) / 20_000) !== Math.floor(this.gravadas / 20_000)) {
@@ -191,6 +205,13 @@ export async function sincronizar(deps: DependenciasSync, configuracao: Configur
   const historicoValido = anterior !== null && (await deps.git.temCommit(anterior));
 
   const removidasEscopo = gravador.removerForaDoEscopo(pathspecs);
+  // Antes de reler entradas, o índice declara só o que continua completo. Se o sync parar
+  // no meio, a próxima rodada relê o que faltou, mesmo que o escopo volte ao valor antigo.
+  const escopoGarantido = intersecao(escopo, escopoAnterior);
+  const corpoGarantido = intersecao(corpo, corpoAnterior);
+  if (!mesmoConjunto(escopoGarantido, escopoAnterior) || !mesmoConjunto(corpoGarantido, corpoAnterior)) {
+    gravador.gravarMeta({ escopo: JSON.stringify(escopoGarantido), corpo: JSON.stringify(corpoGarantido) });
+  }
   const completo = !historicoValido;
   const novasEntradas = completo
     ? escopo
@@ -217,7 +238,13 @@ export async function sincronizar(deps: DependenciasSync, configuracao: Configur
   }
   for (const spec of reescaneadas) {
     deps.log('info', 'indexando entrada do escopo', { entrada: spec });
-    for await (const caminho of deps.git.arquivos(head, [spec])) await processador.acrescentar({ status: 'A', caminho });
+    // Marca e varre: o que estava no índice e não está mais na árvore sai do índice.
+    const sobras = new Set([...gravador.caminhosSob(spec), ...gravador.falhasSob(spec)]);
+    for await (const caminho of deps.git.arquivos(head, [spec])) {
+      sobras.delete(caminho);
+      await processador.acrescentar({ status: 'A', caminho });
+    }
+    for (const caminho of sobras) await processador.acrescentar({ status: 'D', caminho });
     await processador.descarregar();
   }
 

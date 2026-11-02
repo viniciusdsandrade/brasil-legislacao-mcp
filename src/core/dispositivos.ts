@@ -438,7 +438,9 @@ function pontoDeCorte(texto: string, maximo: number): number {
  * Junta unidades até o limite de caracteres. Uma unidade maior que a página é cortada
  * numa quebra de linha, e a próxima página continua do ponto do corte.
  */
-export function paginar(textos: readonly string[], inicio: PosicaoPagina, maximo: number): Pagina {
+export function paginar(textos: readonly string[], inicio: PosicaoPagina, maximoPedido: number): Pagina {
+  // Com espaço zero ou negativo a página ficaria vazia e o cursor não avançaria.
+  const maximo = Math.max(1, maximoPedido);
   const partes: string[] = [];
   let usados = 0;
   let unidade = Math.max(0, inicio.unidade);

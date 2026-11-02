@@ -7,6 +7,7 @@ import { LeitorDoClone } from '../src/adaptadores/acervo-local.js';
 import { GitLocal } from '../src/adaptadores/git.js';
 import { abrirIndiceEscrita, type IndiceSqlite } from '../src/adaptadores/sqlite/indice.js';
 import { montarConsultaFts } from '../src/core/consulta-fts.js';
+import type { LeitorArquivos } from '../src/core/portas.js';
 import { sincronizar, type RelatorioSync } from '../src/core/sincronizacao.js';
 import { CAMINHO_CDC, CAMINHO_SP_1880, PASTA_FIXTURES } from './apoio.js';
 
@@ -45,13 +46,13 @@ describe('sincronização com um repositório git local', () => {
     commitar(mensagem, autor, data);
   };
 
-  const sync = (escopo: string[], corpo: string[] = []): Promise<RelatorioSync> => {
+  const sync = (escopo: string[], corpo: string[] = [], leitor?: LeitorArquivos): Promise<RelatorioSync> => {
     const remoto = `file://${origem}`;
     return sincronizar(
       {
         git: new GitLocal({ binario: 'git', diretorio: clone, remoto, ramo: 'main' }),
         gravador: indice,
-        leitor: new LeitorDoClone(clone),
+        leitor: leitor ?? new LeitorDoClone(clone),
         relogio: { agora: () => new Date() },
         log: () => undefined,
       },
@@ -169,5 +170,40 @@ describe('sincronização com um repositório git local', () => {
     const comCorpo = await sync(['federal'], ['federal']);
     expect(comCorpo).toMatchObject({ gravadas: 3, corpo: ['federal'] });
     expect(buscar().sort()).toEqual([CAMINHO_CC, CAMINHO_NOVA].sort());
+  });
+
+  it('ao reler uma entrada inteira, tira do índice o arquivo que saiu da árvore', async () => {
+    git(origem, ['rm', '-q', CAMINHO_NOVA]);
+    commitar('Remove uma norma federal');
+    // O corpo sai do índice: a entrada federal é relida inteira, sem o diff.
+    const relatorio = await sync(['federal']);
+    expect(relatorio).toMatchObject({ gravadas: 2, removidas: 1, normas: 2, corpo: [] });
+    expect(indice.porCaminho(CAMINHO_NOVA)).toBeNull();
+  });
+
+  it('depois de um sync interrompido, o próximo relê o que saiu do índice', async () => {
+    const doClone = new LeitorDoClone(clone);
+    const interrompido: LeitorArquivos = {
+      ler: async (caminho) => {
+        if (caminho === 'constituicao.md') throw new Error('sync interrompido');
+        return doClone.ler(caminho);
+      },
+    };
+    await expect(sync(['constituicao'], [], interrompido)).rejects.toThrow('sync interrompido');
+    expect(indice.contarNormas()).toBe(0);
+    const retomado = await sync(['federal']);
+    expect(retomado).toMatchObject({ gravadas: 2, normas: 2 });
+    expect(indice.porCaminho(CAMINHO_CC)).not.toBeNull();
+  });
+
+  it('compara o remoto pela URL gravada no clone, sem aplicar insteadOf', async () => {
+    const pasta = join(raiz, 'remoto-insteadof');
+    mkdirSync(pasta);
+    git(pasta, ['init', '-q']);
+    git(pasta, ['remote', 'add', 'origin', 'https://example.com/acervo/leis.git']);
+    git(pasta, ['config', 'url.ssh://git@example.com/.insteadOf', 'https://example.com/']);
+    expect(git(pasta, ['remote', 'get-url', 'origin']).trim()).toBe('ssh://git@example.com/acervo/leis.git');
+    const local = new GitLocal({ binario: 'git', diretorio: pasta, remoto: 'https://example.com/acervo/leis.git', ramo: 'main' });
+    expect(await local.remotoAtual()).toBe('https://example.com/acervo/leis.git');
   });
 });

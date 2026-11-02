@@ -267,6 +267,15 @@ describe('dispositivos', () => {
     const fim = paginar([longa], { unidade: 0, deslocamento: 20 }, 10);
     expect(fim).toMatchObject({ texto: 'x'.repeat(5), proxima: null });
   });
+
+  it('a paginação avança mesmo quando o espaço pedido é zero ou negativo', () => {
+    const longa = 'x'.repeat(30);
+    for (const espaco of [0, -500]) {
+      const pagina = paginar([longa], { unidade: 0, deslocamento: 0 }, espaco);
+      expect(pagina.texto.length).toBeGreaterThan(0);
+      expect(pagina.proxima?.deslocamento ?? longa.length).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe('consulta FTS5 e ripgrep', () => {

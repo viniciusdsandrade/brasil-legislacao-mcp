@@ -1,6 +1,17 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { AVISO_AUSENCIA } from '../src/core/servico.js';
-import { AUTORIAS_DE_TESTE, CAMINHO_CDC, criarIndiceDasFixtures, servicoDasFixtures, temRipgrep, type IndiceDeTeste } from './apoio.js';
+import { AcervoLocal } from '../src/adaptadores/acervo-local.js';
+import type { BuscaTextual } from '../src/core/portas.js';
+import { AVISO_AUSENCIA, ServicoLeis, pastasDaBuscaTextual } from '../src/core/servico.js';
+import {
+  AUTORIAS_DE_TESTE,
+  CAMINHO_CDC,
+  ESCOPO_FIXTURES,
+  PASTA_FIXTURES,
+  criarIndiceDasFixtures,
+  servicoDasFixtures,
+  temRipgrep,
+  type IndiceDeTeste,
+} from './apoio.js';
 
 type Objeto = Record<string, unknown>;
 
@@ -84,6 +95,41 @@ describe('serviço de consulta', () => {
       const [item] = lista(resposta['itens']);
       expect(item).toMatchObject({ caminho: 'estaduais/SP/leis-ordinarias/1880/lei-1-1880-02-25-id137931.md' });
       expect(texto(item?.['trecho'])).toContain('combustores');
+    });
+
+    it.skipIf(!temRipgrep)('com UF e sem esfera, a busca no texto inclui as normas municipais', async () => {
+      const resposta = await servicoDasFixtures(teste.indice).buscar({ texto: 'Valinhos', alcance: 'texto', uf: 'SP' });
+      expect(resposta['motor']).toBe('ripgrep');
+      expect(lista(resposta['itens']).map((item) => item['caminho'])).toEqual([
+        'municipais/SP/campinas/leis-ordinarias/1956/leis-ordinarias-1581-1956-sapl-15126.md',
+      ]);
+      expect(resposta['total_aproximado']).toBe(false);
+    });
+
+    it('a busca no texto procura nas pastas da esfera e da UF, não na pasta do tipo', () => {
+      expect(pastasDaBuscaTextual(ESCOPO_FIXTURES, { uf: 'SP' })).toEqual(['estaduais/SP', 'municipais/SP']);
+      expect(pastasDaBuscaTextual(['federal'], { esfera: 'federal', tipoChave: 'decretos' })).toEqual(['federal']);
+      expect(pastasDaBuscaTextual(['federal'], { esfera: 'estaduais' })).toEqual([]);
+    });
+
+    it('marca o resultado como aproximado quando a busca no texto para no limite', async () => {
+      const caminho = 'estaduais/SP/leis-ordinarias/1990/lei-8078-1990-12-01-id900001.md';
+      const chamadas: string[][] = [];
+      const busca: BuscaTextual = {
+        arquivos: async ({ pastas }) => {
+          chamadas.push([...pastas]);
+          return { caminhos: [caminho], parcial: true };
+        },
+        trechos: async () => [{ caminho, linha: 3, trecho: 'texto achado' }],
+      };
+      const servico = new ServicoLeis({ indice: () => teste.indice, acervo: new AcervoLocal(PASTA_FIXTURES), buscaTextual: busca });
+      const resposta = await servico.buscar({ texto: 'qualquer', alcance: 'texto', esfera: 'estaduais' });
+      expect(resposta).toMatchObject({ motor: 'ripgrep', total: 1, total_aproximado: true });
+      expect(resposta['avisos']).toEqual([expect.stringContaining('parou')]);
+      expect(lista(resposta['itens'])[0]).toMatchObject({ caminho, trecho: 'texto achado' });
+      // Poucas normas no filtro: a busca lê só os arquivos que o índice indica.
+      expect(chamadas).toHaveLength(1);
+      expect(chamadas[0]?.every((alvo) => alvo.startsWith('estaduais/') && alvo.endsWith('.md'))).toBe(true);
     });
 
     it('corta os itens para caber no orçamento de tokens e devolve cursor', async () => {

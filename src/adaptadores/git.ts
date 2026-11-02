@@ -80,7 +80,8 @@ export class GitLocal implements RepositorioGit {
 
   async remotoAtual(): Promise<string | null> {
     try {
-      const url = (await this.git(['remote', 'get-url', 'origin'])).trim();
+      // O valor cru da configuração: `git remote get-url` aplica as regras insteadOf e mudaria a URL.
+      const url = (await this.git(['config', '--get', 'remote.origin.url'])).trim();
       return url === '' ? null : url;
     } catch {
       return null;

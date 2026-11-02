@@ -5,7 +5,7 @@ import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 import { AcervoLocal } from '../src/adaptadores/acervo-local.js';
 import { argumentosDeClone } from '../src/adaptadores/git.js';
-import { argumentosRipgrep } from '../src/adaptadores/ripgrep.js';
+import { argumentosRipgrep, argumentosRipgrepArquivos } from '../src/adaptadores/ripgrep.js';
 import { normalizarEscopo, validarCaminho } from '../src/core/caminho.js';
 import { montarConsultaFts } from '../src/core/consulta-fts.js';
 import { ErroLeis } from '../src/core/erros.js';
@@ -25,6 +25,19 @@ describe('caminhos', () => {
     'README.md',
   ])('recusa %s', (caminho) => {
     expect(validarCaminho(caminho)).toBeNull();
+  });
+
+  it.each(['federal/leis-ordinarias/1990/ x.md', 'federal/leis-ordinarias/1990/x\u0001.md', 'federal/leis-ordinarias//x.md'])(
+    'recusa o segmento perigoso em %j',
+    (caminho) => {
+      expect(validarCaminho(caminho)).toBeNull();
+    },
+  );
+
+  it('aceita caminhos do acervo com espaço e "°"', () => {
+    const caminho = 'estaduais/DF/portarias/2020/port-N° 322-2020-09-16.md';
+    expect(validarCaminho(caminho)).toBe(caminho);
+    expect(validarCaminho('estaduais/DF/decretos/1988/dec-11333 -1988-12-05.md')).toBe('estaduais/DF/decretos/1988/dec-11333 -1988-12-05.md');
   });
 
   it('aceita o caminho de uma norma', () => {
@@ -59,6 +72,16 @@ describe('subprocessos', () => {
     expect(argumentos.slice(0, separador).some((argumento) => argumento.startsWith('--pre'))).toBe(false);
     expect(argumentos[separador + 1]).toBe('-e --pre=sh');
     expect(argumentos.slice(separador + 2)).toEqual(['federal']);
+  });
+
+  it('ripgrep: a lista de arquivos também tem o padrão depois de -- e separa os caminhos com NUL', () => {
+    const argumentos = argumentosRipgrepArquivos('--pre=sh', ['estaduais/SP', 'municipais/SP']);
+    const separador = argumentos.indexOf('--');
+    expect(argumentos).toContain('--no-config');
+    expect(argumentos).toContain('--null');
+    expect(argumentos.slice(0, separador)).toEqual(expect.arrayContaining(['--files-with-matches', '--sort', 'path']));
+    expect(argumentos.slice(0, separador).some((argumento) => argumento.startsWith('--pre'))).toBe(false);
+    expect(argumentos.slice(separador + 1)).toEqual(['--pre=sh', 'estaduais/SP', 'municipais/SP']);
   });
 
   it('git clone: o remoto e a pasta vêm depois de --', () => {

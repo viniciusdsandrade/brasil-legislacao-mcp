@@ -3,10 +3,27 @@ import { ehEsfera, type Esfera, type InfoCaminho } from './tipos.js';
 
 export const CAMINHO_CONSTITUICAO = 'constituicao.md';
 
-const SEGMENTO = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+/** Barra invertida, NUL e caracteres de controle nunca entram num segmento. */
+const PROIBIDO_NO_SEGMENTO = /[\\\u0000-\u001f\u007f]/u;
+const MAX_SEGMENTO = 255;
 const UF = /^[A-Z]{2}$/;
 const ANO = /^\d{4}$/;
 const MAX_CAMINHO = 400;
+
+/**
+ * Segmento de caminho do acervo. O acervo tem nomes com espaço, aspas e "°"
+ * (por exemplo "port-N° 322-2020-09-16.md"), então a regra só recusa o que é perigoso:
+ * segmento vazio, oculto ou começado por "_" ou espaço, barra invertida, NUL e controle.
+ * "." e ".." começam por ponto e ficam de fora.
+ */
+function segmentoValido(segmento: string): boolean {
+  return (
+    segmento !== '' &&
+    segmento.length <= MAX_SEGMENTO &&
+    !PROIBIDO_NO_SEGMENTO.test(segmento) &&
+    !/^[._\s]/u.test(segmento)
+  );
+}
 
 function ehPastaDeAno(segmento: string): boolean {
   return ANO.test(segmento) || segmento === 'sem-ano';
@@ -35,7 +52,7 @@ export function analisarCaminho(caminho: string): InfoCaminho | null {
   if (partes.length < 3 || esfera === undefined || arquivo === undefined) return null;
   if (!ehEsfera(esfera) || esfera === 'constituicao') return null;
   if (!arquivo.endsWith('.md')) return null;
-  if (partes.some((parte) => !SEGMENTO.test(parte))) return null;
+  if (partes.some((parte) => !segmentoValido(parte))) return null;
 
   const info: InfoCaminho = {
     caminho,
@@ -104,7 +121,7 @@ export function validarCaminho(caminho: unknown): string | null {
   if (limpo === '' || limpo.length > MAX_CAMINHO) return null;
   if (limpo.includes('\0') || limpo.includes('\\') || limpo.startsWith('/')) return null;
   if (!limpo.endsWith('.md')) return null;
-  if (limpo.split('/').some((parte) => !SEGMENTO.test(parte))) return null;
+  if (limpo.split('/').some((parte) => !segmentoValido(parte))) return null;
   return analisarCaminho(limpo) ? limpo : null;
 }
 
@@ -129,7 +146,7 @@ export function validarCaminhoFalhas(caminho: string): boolean {
   if (arquivo !== '_falhas.jsonl' || partes.length === 0) return false;
   const esfera = partes[0];
   if (esfera === undefined || !ehEsfera(esfera)) return false;
-  return partes.every((parte) => SEGMENTO.test(parte));
+  return partes.every((parte) => segmentoValido(parte));
 }
 
 const ENTRADA_ESCOPO = /^(constituicao|federal|estaduais|municipais|reguladores|jurisprudencia|tratados)(\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/;

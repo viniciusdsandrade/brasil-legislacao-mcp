@@ -61,6 +61,10 @@ export interface GravadorIndice {
   religarAutoria(): number;
   registrarFalhas(caminhos: readonly string[]): void;
   removerFalhas(caminhos: readonly string[]): void;
+  /** Caminhos de normas indexadas sob um pathspec (arquivo ou pasta). */
+  caminhosSob(pathspec: string): string[];
+  /** Arquivos _falhas.jsonl registrados sob um pathspec. */
+  falhasSob(pathspec: string): string[];
   contarNormas(): number;
   otimizar(): void;
 }
@@ -81,9 +85,19 @@ export interface OcorrenciaTexto {
   trecho: string;
 }
 
+export interface ArquivosEncontrados {
+  /** Caminhos em ordem estável (ordem alfabética do caminho). */
+  caminhos: string[];
+  /** Verdadeiro quando a busca parou no limite ou com erro parcial. */
+  parcial: boolean;
+}
+
 /** Busca no corpo dos arquivos, fora do índice (ripgrep). */
 export interface BuscaTextual {
-  buscar(parametros: { padrao: string; pastas: readonly string[]; maxArquivos: number }): Promise<OcorrenciaTexto[]>;
+  /** Todos os arquivos das pastas que casam com o padrão, até o limite. */
+  arquivos(parametros: { padrao: string; pastas: readonly string[]; maxArquivos: number }): Promise<ArquivosEncontrados>;
+  /** A primeira ocorrência do padrão em cada arquivo, para mostrar o trecho. */
+  trechos(parametros: { padrao: string; caminhos: readonly string[] }): Promise<OcorrenciaTexto[]>;
 }
 
 export type StatusMudanca = 'A' | 'M' | 'D';

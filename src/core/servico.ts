@@ -22,7 +22,7 @@ import {
 } from './dispositivos.js';
 import { ErroLeis } from './erros.js';
 import { caracteresDoOrcamento, normalizarOrcamento } from './orcamento.js';
-import type { Acervo, BuscaTextual, ConsultaIndice, OcorrenciaTexto } from './portas.js';
+import type { Acervo, ArquivosEncontrados, BuscaTextual, ConsultaIndice, OcorrenciaTexto } from './portas.js';
 import { arrumarParaExibir, linhaSoTachada, removerTachado, semMarcasDeTachado } from './tachado.js';
 import { dataIso, fnv1a, ordinal, slug, truncar } from './texto.js';
 import {
@@ -45,7 +45,11 @@ export const AVISO_AUSENCIA = 'Ausência no acervo local não prova que a norma 
 const LIMITE_PADRAO = 10;
 const LIMITE_MAXIMO = 50;
 const TETO_CONTAGEM = 10_000;
-const MAX_ARQUIVOS_RIPGREP = 500;
+/** Arquivos que a busca no texto lista antes do filtro de metadados. */
+const MAX_ARQUIVOS_RIPGREP = 20_000;
+/** Até este número de normas no filtro, a busca no texto lê só os arquivos do filtro. */
+const MAX_CANDIDATOS_DO_INDICE = 2_000;
+const ARQUIVOS_POR_CHAMADA = 500;
 const RESERVA_METADADOS = 2_000;
 
 export type Formato = 'resumido' | 'completo';
@@ -223,6 +227,20 @@ function lerFiltro(entrada: EntradaFiltros): FiltroLido {
   return { filtro, recorte };
 }
 
+/**
+ * Pastas da busca no texto. Usa só esfera, UF, município, órgão e tribunal: o tipo fica para
+ * o filtro do índice, porque a pasta do tipo muda entre as esferas. Uma UF sem esfera
+ * procura nas pastas estaduais e municipais.
+ */
+export function pastasDaBuscaTextual(escopo: readonly string[], filtro: FiltroNormas): string[] {
+  const partes = { esfera: filtro.esfera, uf: filtro.uf, municipio: filtro.municipio, orgao: filtro.orgao, tribunal: filtro.tribunal };
+  const recortes =
+    filtro.esfera === undefined && filtro.uf !== undefined && filtro.municipio === undefined
+      ? [recorteDoFiltro({ ...partes, esfera: 'estaduais' }), recorteDoFiltro({ ...partes, esfera: 'municipais' })]
+      : [recorteDoFiltro(partes)];
+  return [...new Set(recortes.flatMap((recorte) => pastasDoRecorteNoEscopo(escopo, recorte)))];
+}
+
 function descreverFiltro(filtro: FiltroNormas): Record<string, string | boolean> {
   const descricao: Record<string, string | boolean> = {};
   const pares: Array<[string, string | boolean | undefined]> = [
@@ -364,27 +382,31 @@ export class ServicoLeis {
     const cursor = textoOpcional(entrada.cursor, 'cursor', 2048);
     const deslocamento = cursor === undefined ? 0 : numeroDoCursor(decodificarCursor(cursor, 'b', impressao), 'o');
 
-    const corpoCobre =
-      recorte === '' ? estado.escopo.every((entradaEscopo) => estado.corpo.includes(entradaEscopo)) : escopoCobre(estado.corpo, recorte);
+    const pastasBusca = pastasDaBuscaTextual(estado.escopo, filtro);
+    const corpoCobre = pastasBusca.length > 0 && pastasBusca.every((pasta) => escopoCobre(estado.corpo, pasta));
     let normas: Norma[];
     let total: number;
     let aproximado = false;
     let motor: 'fts5' | 'ripgrep' | 'filtro';
     const trechos = new Map<string, OcorrenciaTexto>();
+    let avisoParcial: string | null = null;
     if (texto !== undefined && alcance === 'texto' && !corpoCobre) {
-      const pastas = pastasDoRecorteNoEscopo(estado.escopo, recorte);
-      if (pastas.length === 0) throw this.foraDoEscopo(recorte, estado);
+      if (pastasBusca.length === 0) throw this.foraDoEscopo(recorte, estado);
       const padrao = padraoSemAcento(texto);
       if (padrao === null) throw new ErroLeis('consulta_vazia', 'O texto não tem termos pesquisáveis.', 'Use palavras com duas letras ou mais.');
-      const maxArquivos = Math.min(MAX_ARQUIVOS_RIPGREP, (deslocamento + limite) * 5 + 50);
-      const ocorrencias = await this.deps.buscaTextual.buscar({ padrao, pastas, maxArquivos });
-      for (const ocorrencia of ocorrencias) if (!trechos.has(ocorrencia.caminho)) trechos.set(ocorrencia.caminho, ocorrencia);
-      const caminhos = [...trechos.keys()];
-      const porCaminho = new Map(indice.porCaminhos(caminhos, filtro).map((norma): [string, Norma] => [norma.caminho, norma]));
-      const ordenadas = caminhos.map((caminho) => porCaminho.get(caminho)).filter((norma): norma is Norma => norma !== undefined);
+      const encontrados = await this.arquivosComTexto(indice, estado, filtro, padrao, pastasBusca);
+      const porCaminho = new Map(indice.porCaminhos(encontrados.caminhos, filtro).map((norma): [string, Norma] => [norma.caminho, norma]));
+      const ordenadas = encontrados.caminhos.map((caminho) => porCaminho.get(caminho)).filter((norma): norma is Norma => norma !== undefined);
       total = ordenadas.length;
-      aproximado = caminhos.length >= maxArquivos;
+      aproximado = encontrados.parcial;
+      if (encontrados.parcial) {
+        avisoParcial = `A busca no texto parou em ${encontrados.caminhos.length} arquivos, antes do filtro de metadados. Podem faltar normas. Refine o texto ou o filtro, ou indexe o corpo com LEIS_CORPO.`;
+      }
       normas = ordenadas.slice(deslocamento, deslocamento + limite + 1);
+      const daPagina = normas.slice(0, limite).map((norma) => norma.caminho);
+      for (const ocorrencia of await this.deps.buscaTextual.trechos({ padrao, caminhos: daPagina })) {
+        if (!trechos.has(ocorrencia.caminho)) trechos.set(ocorrencia.caminho, ocorrencia);
+      }
       motor = 'ripgrep';
     } else {
       let fts: string | null = null;
@@ -418,6 +440,7 @@ export class ServicoLeis {
       alcance,
       filtro: descreverFiltro(filtro),
     };
+    if (avisoParcial !== null) resposta['avisos'] = [avisoParcial];
     if (itens.length === 0) {
       resposta['mensagem'] = `Nenhuma norma encontrada. ${AVISO_AUSENCIA}`;
       resposta['cobertura'] = await this.montarCobertura(indice, estado, filtro, recorte, true);
@@ -428,6 +451,40 @@ export class ServicoLeis {
     const haMais = normas.length > itens.length;
     if (haMais) resposta['cursor'] = codificarCursor({ t: 'b', f: impressao, o: proximo });
     return resposta;
+  }
+
+  /**
+   * Lista, em ordem estável, os arquivos que contêm o padrão. Quando o filtro tem poucas normas
+   * no índice, procura só nesses arquivos. Senão, procura nas pastas do recorte.
+   */
+  private async arquivosComTexto(
+    indice: ConsultaIndice,
+    estado: EstadoIndice,
+    filtro: FiltroNormas,
+    padrao: string,
+    pastas: readonly string[],
+  ): Promise<ArquivosEncontrados> {
+    const candidatos = indice.contar({ fts: null, filtro, teto: MAX_CANDIDATOS_DO_INDICE });
+    if (candidatos > MAX_CANDIDATOS_DO_INDICE) {
+      return this.deps.buscaTextual.arquivos({ padrao, pastas, maxArquivos: MAX_ARQUIVOS_RIPGREP });
+    }
+    const caminhos = indice
+      .buscar({ fts: null, filtro, limite: MAX_CANDIDATOS_DO_INDICE, deslocamento: 0 })
+      .map((norma) => norma.caminho)
+      .filter((caminho) => escopoCobre(estado.escopo, caminho))
+      .sort();
+    const encontrados: ArquivosEncontrados = { caminhos: [], parcial: false };
+    for (let i = 0; i < caminhos.length; i += ARQUIVOS_POR_CHAMADA) {
+      const parte = await this.deps.buscaTextual.arquivos({
+        padrao,
+        pastas: caminhos.slice(i, i + ARQUIVOS_POR_CHAMADA),
+        maxArquivos: MAX_ARQUIVOS_RIPGREP,
+      });
+      encontrados.caminhos.push(...parte.caminhos);
+      encontrados.parcial = encontrados.parcial || parte.parcial;
+    }
+    encontrados.caminhos.sort();
+    return encontrados;
   }
 
   // -------------------------------------------------------------------------
@@ -500,11 +557,12 @@ export class ServicoLeis {
           `Há outro art. ${ordinal(localizacao.artigo.chave)} nesta norma em: ${outros}. Mostrando: ${localizacao.bloco.titulo}. Use o parâmetro bloco para escolher.`,
         );
       }
-      const pagina = paginar([textoDispositivo], posicao, espaco - (caput?.length ?? 0));
+      const primeiraPagina = posicao.unidade === 0 && posicao.deslocamento === 0;
+      // O caput só vai na primeira página e ocupa no máximo metade dela.
+      const caputExibido = caput !== null && caput !== textoDispositivo && primeiraPagina ? truncar(caput, Math.floor(espaco / 2)) : null;
+      const pagina = paginar([textoDispositivo], posicao, espaco - (caputExibido?.length ?? 0));
       const dispositivo: Item = { citacao: localizacao.citacao, texto: pagina.texto };
-      if (caput !== null && caput !== textoDispositivo && posicao.unidade === 0 && posicao.deslocamento === 0) {
-        dispositivo['caput'] = caput;
-      }
+      if (caputExibido !== null) dispositivo['caput'] = caputExibido;
       if (estrutura.blocos.length > 1) dispositivo['bloco'] = localizacao.bloco.titulo;
       return {
         ...base,

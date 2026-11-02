@@ -672,6 +672,20 @@ export class IndiceSqlite implements ConsultaIndice, GravadorIndice {
     })(caminhos);
   }
 
+  caminhosSob(pathspec: string): string[] {
+    return this.db
+      .prepare<[string, string], { caminho: string }>(`SELECT caminho FROM normas WHERE caminho = ? OR caminho LIKE ? ESCAPE '\\'`)
+      .all(pathspec, `${escaparLike(pathspec)}/%`)
+      .map((linha) => linha.caminho);
+  }
+
+  falhasSob(pathspec: string): string[] {
+    return this.db
+      .prepare<[string, string], { caminho: string }>(`SELECT caminho FROM falhas_arquivos WHERE caminho = ? OR caminho LIKE ? ESCAPE '\\'`)
+      .all(pathspec, `${escaparLike(pathspec)}/%`)
+      .map((linha) => linha.caminho);
+  }
+
   contarNormas(): number {
     return this.db.prepare<[], { total: number }>('SELECT count(*) AS total FROM normas').get()?.total ?? 0;
   }
