@@ -42,7 +42,7 @@ We analyzed the corpus before we wrote code. We read `README.md`, `COBERTURA.md`
 | jurisprudencia | `jurisprudencia/<court>/<kind>/<file>.md`, and `jurisprudencia/regimentos/<file>.md` |
 | tratados | `tratados/<group>/<file>.md` |
 
-Folders that start with `_` (`_fonte`, `_lotes`, `_indice`) are not norms. They hold 40,987 Markdown files. The file names do not have one pattern, so the number and the date come from the header, not from the file name. No path has a comma or a non-ASCII character.
+Folders that start with `_` (`_fonte`, `_lotes`, `_indice`) are not norms. They hold 40,987 Markdown files. The file names do not have one pattern, so the number and the date come from the header, not from the file name. No path has a comma or a quotation mark. 249 norm paths have a space, and 2 of these paths also have the character `°` (for example `estaduais/DF/portarias/2020/port-N° 322-2020-09-16.md`). The server accepts these paths. It refuses an empty segment, a segment that starts with `.`, `_` or a space, a backslash, NUL and control characters.
 
 ### Struck text
 
@@ -98,7 +98,7 @@ We keep the full history, because `leis_autoria` needs the base commits. The cos
 
 ### D4. Index
 
-We use SQLite FTS5 through `better-sqlite3`. Its bundled SQLite (3.53.4) has FTS5. `node:sqlite` does not always have FTS5. The FTS5 table uses `tokenize='unicode61 remove_diacritics 2'` and `contentless_delete=1`, so the index does not keep a second copy of the text. The columns are `titulo`, `ementa` and `corpo`. The body goes into the index only for the paths in `LEIS_CORPO`. Without the body in the index, a body search uses ripgrep in the folders of the filter.
+We use SQLite FTS5 through `better-sqlite3`. Its bundled SQLite (3.53.4) has FTS5. `node:sqlite` does not always have FTS5. The FTS5 table uses `tokenize='unicode61 remove_diacritics 2'` and `contentless_delete=1`, so the index does not keep a second copy of the text. The columns are `titulo`, `ementa` and `corpo`. The body goes into the index only for the paths in `LEIS_CORPO`. Without the body in the index, a body search uses ripgrep. When the filter has 2,000 norms or fewer in the index, ripgrep reads only these files. Else ripgrep reads the folders of the sphere, UF, city, agency or court of the filter, in path order, and stops at 20,000 files. The kind does not select the folder, because the kind folder is different in each sphere. A UF without a sphere selects the state folder and the city folder of the UF. The index filter comes after ripgrep. When ripgrep stops at the limit, the result has `total_aproximado: true` and a notice in `avisos`.
 
 ### D5. Sync
 
@@ -107,10 +107,11 @@ We use SQLite FTS5 through `better-sqlite3`. Its bundled SQLite (3.53.4) has FTS
 1. Clone, or set the sparse checkout again when the scope changes.
 2. Run `git pull --ff-only`.
 3. Read the changes from the indexed commit to `HEAD` with `git diff --name-status --no-renames`. `--no-renames` prevents a download of blobs in the partial clone.
-4. Index new scope entries with `git ls-tree`.
-5. Write in batches. Write the new commit only at the end. If the sync stops, the next sync does the same changes again. All writes are idempotent.
+4. Index new scope entries with `git ls-tree`. Index again the entries whose body status changes, and all entries when the indexed commit is not in the history. For each of these entries, remove the norms that are in the index but not in the tree.
+5. Before step 4, write as scope and body only the entries that stay complete. Thus, if the sync stops, the next sync reads these entries again, also when the scope goes back to the old value.
+6. Write in batches. Write the new commit only at the end. If the sync stops, the next sync does the same changes again. All writes are idempotent.
 
-The server opens the index read-only and only at the first tool call. It does not block the handshake.
+The server opens the index read-only and only at the first tool call. It does not block the handshake. The index uses WAL mode, so the server sees the data of a sync when the sync writes it. You do not have to start the server again.
 
 ### D6. Header parser
 

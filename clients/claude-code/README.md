@@ -47,4 +47,4 @@ Copy [.mcp.json](.mcp.json) to the root of the project. Claude Code asks you to 
 
 ## Update the corpus
 
-The server does not update the corpus. Run `sync` again when you want new norms. The server reads the new index at the next start.
+The server does not update the corpus. Run `sync` again when you want new norms. The server reads the new index when `sync` ends. You do not have to start the server again. While `sync` runs, a search can show old and new data together.
