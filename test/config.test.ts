@@ -15,7 +15,16 @@ describe('configuração por variáveis de ambiente', () => {
       nivelLog: 'info',
       clone: '/tmp/cache/leis-mcp/acervo',
       indice: '/tmp/cache/leis-mcp/indice.sqlite',
+      httpHost: '127.0.0.1',
+      httpPorta: 3920,
     });
+  });
+
+  it('lê o endereço do modo http e recusa endereço que não é local', () => {
+    expect(lerConfiguracao({ LEIS_HTTP_HOST: '::1', LEIS_HTTP_PORTA: '0' })).toMatchObject({ httpHost: '::1', httpPorta: 0 });
+    expect(() => lerConfiguracao({ LEIS_HTTP_HOST: '0.0.0.0' })).toThrow(/endereço local/);
+    expect(() => lerConfiguracao({ LEIS_HTTP_PORTA: '70000' })).toThrow(/LEIS_HTTP_PORTA/);
+    expect(() => lerConfiguracao({ LEIS_HTTP_PORTA: '-1' })).toThrow(/LEIS_HTTP_PORTA/);
   });
 
   it('lê escopo, corpo, orçamento, log e pastas', () => {

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import { AcervoLocal, LeitorDoClone } from './adaptadores/acervo-local.js';
 import { GitLocal } from './adaptadores/git.js';
+import { servirHttp } from './adaptadores/mcp/http.js';
 import { criarServidorMcp } from './adaptadores/mcp/servidor.js';
 import { RipgrepLocal } from './adaptadores/ripgrep.js';
 import { abrirIndiceEscrita, abrirIndiceLeitura, type IndiceSqlite } from './adaptadores/sqlite/indice.js';
@@ -16,6 +17,7 @@ const AJUDA = `leis-mcp: servidor MCP do acervo de legislação brasileira vinic
 
 Uso:
   leis-mcp [serve]   Inicia o servidor MCP em stdio (padrão).
+  leis-mcp http      Inicia o servidor MCP em Streamable HTTP, em http://127.0.0.1:3920/mcp.
   leis-mcp sync      Clona ou atualiza o acervo e o índice local.
   leis-mcp status    Mostra o estado do índice local.
   leis-mcp --version Mostra a versão.
@@ -31,6 +33,8 @@ Variáveis de ambiente:
   LEIS_RG                Programa ripgrep (padrão: rg).
   LEIS_GIT               Programa git (padrão: git).
   LEIS_LOG               erro, aviso, info ou depuracao (padrão: info).
+  LEIS_HTTP_HOST         Endereço do modo http: 127.0.0.1, ::1 ou localhost (padrão: 127.0.0.1).
+  LEIS_HTTP_PORTA        Porta do modo http (padrão: 3920).
 `;
 
 function versao(): string {
@@ -49,7 +53,8 @@ function escreverJson(valor: unknown): void {
   process.stdout.write(`${JSON.stringify(valor, null, 2)}\n`);
 }
 
-function servir(configuracao: Configuracao, log: Log): void {
+/** Serviço de consulta. O índice só abre na primeira chamada, para não bloquear o handshake. */
+function criarServico(configuracao: Configuracao): { servico: ServicoLeis; fecharIndice: () => void } {
   let indice: IndiceSqlite | null = null;
   const servico = new ServicoLeis({
     indice: () => {
@@ -60,18 +65,38 @@ function servir(configuracao: Configuracao, log: Log): void {
     buscaTextual: new RipgrepLocal({ binario: configuracao.rg, raiz: configuracao.clone }),
     orcamentoTokens: configuracao.orcamentoTokens,
   });
-  const alca = serveStdio(() => criarServidorMcp(servico, { versao: versao(), log }), {
-    onerror: (erro) => log.erro('erro no transporte stdio', { erro: erro.message }),
-  });
+  return { servico, fecharIndice: () => indice?.fechar() };
+}
+
+function aoEncerrar(fechar: () => Promise<void>, fecharIndice: () => void): void {
   const encerrar = (): void => {
-    void alca.close().finally(() => {
-      indice?.fechar();
+    void fechar().finally(() => {
+      fecharIndice();
       process.exit(0);
     });
   };
   process.once('SIGINT', encerrar);
   process.once('SIGTERM', encerrar);
+}
+
+function servir(configuracao: Configuracao, log: Log): void {
+  const { servico, fecharIndice } = criarServico(configuracao);
+  const alca = serveStdio(() => criarServidorMcp(servico, { versao: versao(), log }), {
+    onerror: (erro) => log.erro('erro no transporte stdio', { erro: erro.message }),
+  });
+  aoEncerrar(() => alca.close(), fecharIndice);
   log.info('servidor MCP pronto em stdio', { indice: configuracao.indice, escopo: configuracao.escopo });
+}
+
+async function servirPorHttp(configuracao: Configuracao, log: Log): Promise<void> {
+  const { servico, fecharIndice } = criarServico(configuracao);
+  const servidor = await servirHttp(() => criarServidorMcp(servico, { versao: versao(), log }), {
+    host: configuracao.httpHost,
+    porta: configuracao.httpPorta,
+    log,
+  });
+  aoEncerrar(() => servidor.fechar(), fecharIndice);
+  log.info('servidor MCP pronto em Streamable HTTP', { url: servidor.url, indice: configuracao.indice, escopo: configuracao.escopo });
 }
 
 async function sincronizarAcervo(configuracao: Configuracao, log: Log): Promise<number> {
@@ -135,6 +160,9 @@ async function principal(argumentos: readonly string[]): Promise<number | null> 
     switch (comando) {
       case 'serve':
         servir(configuracao, log);
+        return null;
+      case 'http':
+        await servirPorHttp(configuracao, log);
         return null;
       case 'sync':
         return await sincronizarAcervo(configuracao, log);

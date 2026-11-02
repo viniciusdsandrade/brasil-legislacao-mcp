@@ -8,6 +8,9 @@ import { nivelDeLog, type NivelLog } from './log.js';
 export const REMOTO_PADRAO = 'https://github.com/viniciusdsandrade/leis.git';
 export const RAMO_PADRAO = 'main';
 export const ESCOPO_PADRAO = 'constituicao,federal';
+export const HTTP_HOST_PADRAO = '127.0.0.1';
+export const HTTP_PORTA_PADRAO = 3920;
+const HTTP_HOSTS_LOCAIS = ['127.0.0.1', '::1', 'localhost'];
 
 export interface Configuracao {
   remoto: string;
@@ -20,6 +23,9 @@ export interface Configuracao {
   rg: string;
   git: string;
   nivelLog: NivelLog;
+  /** Endereço do transporte HTTP: só endereço local. */
+  httpHost: string;
+  httpPorta: number;
 }
 
 function lista(valor: string | undefined): string[] {
@@ -49,6 +55,19 @@ export function lerConfiguracao(ambiente: NodeJS.ProcessEnv = process.env): Conf
     throw new ErroLeis('entrada_invalida', 'LEIS_ESCOPO está vazio.', 'Use, por exemplo, "constituicao,federal".');
   }
   const orcamentoBruto = ambiente['LEIS_ORCAMENTO_TOKENS'];
+  const httpHost = (ambiente['LEIS_HTTP_HOST'] ?? HTTP_HOST_PADRAO).trim();
+  if (!HTTP_HOSTS_LOCAIS.includes(httpHost)) {
+    throw new ErroLeis(
+      'entrada_invalida',
+      `LEIS_HTTP_HOST aceita só endereço local, não "${httpHost}".`,
+      `Use ${HTTP_HOSTS_LOCAIS.join(', ')}. O transporte HTTP não tem autenticação.`,
+    );
+  }
+  const httpPortaTexto = (ambiente['LEIS_HTTP_PORTA'] ?? String(HTTP_PORTA_PADRAO)).trim();
+  const httpPorta = Number(httpPortaTexto);
+  if (!/^\d{1,5}$/.test(httpPortaTexto) || httpPorta > 65_535) {
+    throw new ErroLeis('entrada_invalida', `Porta inválida em LEIS_HTTP_PORTA: "${httpPortaTexto}".`, 'Use um número de 0 a 65535, por exemplo 3920.');
+  }
   return {
     remoto: semOpcao((ambiente['LEIS_REMOTO'] ?? REMOTO_PADRAO).trim(), 'LEIS_REMOTO'),
     ramo,
@@ -60,5 +79,7 @@ export function lerConfiguracao(ambiente: NodeJS.ProcessEnv = process.env): Conf
     rg: semOpcao((ambiente['LEIS_RG'] ?? 'rg').trim(), 'LEIS_RG'),
     git: semOpcao((ambiente['LEIS_GIT'] ?? 'git').trim(), 'LEIS_GIT'),
     nivelLog: nivelDeLog(ambiente['LEIS_LOG']),
+    httpHost,
+    httpPorta,
   };
 }
