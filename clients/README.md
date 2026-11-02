@@ -50,4 +50,4 @@ The server listens at `http://127.0.0.1:3920/mcp`. It accepts only local connect
 
 ## Add a client
 
-Make a new folder with a README and the configuration file of the client. Use the command `npx -y <SPEC> serve` (stdio) or the URL `http://127.0.0.1:3920/mcp`, and the environment variables of the main [README](../README.md#configuration).
+Make a new folder with a README and the configuration file of the client. Use the command `npx -y <SPEC> serve` (stdio) or the URL `http://127.0.0.1:3920/mcp`, and the environment variables of the main [README](../README.en.md#configuration).

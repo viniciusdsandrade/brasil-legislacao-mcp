@@ -119,7 +119,7 @@ The first target client is Claude Code. Codex, Grok, Antigravity, GLM and other 
 
 ### WP10. Documentation
 
-- Outputs: `README.md`, `docs/adr/0001-architecture-and-corpus-contract.md`.
+- Outputs: `README.md` (Portuguese, main), `README.en.md` (ASD-STE100), `docs/adr/0001-architecture-and-corpus-contract.md`.
 
 ### WP11. Review and delivery
 

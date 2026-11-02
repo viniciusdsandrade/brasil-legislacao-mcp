@@ -1,108 +1,110 @@
 # leis-mcp
 
-leis-mcp is an MCP server for the Brazilian legislation corpus [viniciusdsandrade/leis](https://github.com/viniciusdsandrade/leis). It finds, reads and cites norms from a local, read-only clone of the corpus.
+**Português** | [English](README.en.md)
+
+O leis-mcp é um servidor MCP para o acervo de legislação brasileira [viniciusdsandrade/leis](https://github.com/viniciusdsandrade/leis). Ele encontra, lê e cita normas a partir de um clone local do acervo, somente leitura.
 
 > [!IMPORTANT]
-> The texts are for information only. They do not replace the publication in the Diário Oficial. Always cite the `fonte` field of the result.
+> Os textos têm caráter informativo. Eles não substituem a publicação no Diário Oficial. Cite sempre o campo `fonte` do resultado.
 
-## What it does
+## O que ele faz
 
-- It searches norms by words and filters. It searches the title and the summary, and it can also search the body.
-- It reads a full norm in pages of articles, or one provision: article, paragraph, item or letter.
-- It counts norms by sphere, kind, UF, agency, court, city and decade.
-- It shows the gaps of the corpus for a slice, and the state of the local index.
-- It shows who signed a norm, from the base commits of the corpus history.
+- Busca normas por palavras e filtros. Procura no título e na ementa e, se você pedir, também no corpo do texto.
+- Lê uma norma inteira em páginas de artigos, ou um único dispositivo: artigo, parágrafo, inciso ou alínea.
+- Conta normas por esfera, tipo, UF, órgão, tribunal, município e década.
+- Mostra as lacunas do acervo em um recorte e o estado do índice local.
+- Mostra quem assinou uma norma, a partir dos commits da base inicial do histórico do acervo.
 
-## Status
+## Situação
 
-Version 0.1.0. Get it with `npx` from the GitHub release (see [Install](#install)). The package is not in the npm registry.
+Versão 0.1.0. Use com `npx` a partir da release do GitHub (veja [Instalação](#instalação)). O pacote não está no registro do npm.
 
-## Requirements
+## Requisitos
 
-- Node.js 22 or later.
-- git 2.37 or later. The sync uses `git sparse-checkout set --cone` and the cone mode as default.
-- ripgrep (`rg`). It is necessary only for body search in folders that are not in `LEIS_CORPO`.
+- Node.js 22 ou mais recente.
+- git 2.37 ou mais recente. O sync usa `git sparse-checkout set --cone` e o modo cone como padrão.
+- ripgrep (`rg`). Ele só é necessário para buscar no corpo do texto de pastas que não estão em `LEIS_CORPO`.
 
-## Install
+## Instalação
 
-1. Run the first sync. It clones the corpus and makes the index:
+1. Rode o primeiro sync. Ele clona o acervo e cria o índice:
 
    ```sh
    LEIS_ESCOPO=constituicao,federal npx -y https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.1.0/leis-mcp-0.1.0.tgz sync
    ```
 
-2. Connect your MCP client. The folder [clients](clients/README.md) has a guide for Claude Code, Codex, Grok, Antigravity and the GLM clients.
+2. Conecte o seu cliente MCP. A pasta [clients](clients/README.md) tem guias para Claude Code, Codex, Grok, Antigravity e os clientes que usam GLM. Os guias estão em inglês.
 
-To use the source code, clone this repository and run `npm ci`. The `prepare` script builds `dist`. Then use `node dist/cli.js` in place of `npx -y <package>`.
+Para usar o código-fonte, clone este repositório e rode `npm ci`. O script `prepare` compila o `dist`. Depois, use `node dist/cli.js` no lugar de `npx -y <pacote>`.
 
-## Commands
+## Comandos
 
-| Command | What it does |
+| Comando | O que faz |
 | --- | --- |
-| `leis-mcp` or `leis-mcp serve` | Starts the MCP server on stdio. |
-| `leis-mcp http` | Starts the MCP server on Streamable HTTP at `http://127.0.0.1:3920/mcp`. One server can serve all clients. |
-| `leis-mcp sync` | Clones or updates the corpus and the index. It writes a JSON report to stdout. |
-| `leis-mcp status` | Shows the state of the index. |
-| `leis-mcp --version` | Shows the version. |
+| `leis-mcp` ou `leis-mcp serve` | Inicia o servidor MCP em stdio. |
+| `leis-mcp http` | Inicia o servidor MCP em Streamable HTTP, em `http://127.0.0.1:3920/mcp`. Um único servidor atende todos os clientes. |
+| `leis-mcp sync` | Clona ou atualiza o acervo e o índice. Escreve um relatório JSON no stdout. |
+| `leis-mcp status` | Mostra o estado do índice. |
+| `leis-mcp --version` | Mostra a versão. |
 
-### How sync works
+### Como o sync funciona
 
-1. It clones the corpus with `git clone --filter=blob:none --sparse`. Git does not download file contents outside the scope.
-2. It sets a cone sparse checkout from `LEIS_ESCOPO`.
-3. It runs `git pull --ff-only`.
-4. It reads the changes from the indexed commit to `HEAD` and indexes them in batches.
-5. It indexes new scope entries in full.
-6. It reads the authorship from the base commits of the history.
-7. It writes the new commit to the index only at the end.
+1. Clona o acervo com `git clone --filter=blob:none --sparse`. O git não baixa o conteúdo dos arquivos fora do escopo.
+2. Configura um sparse checkout em modo cone a partir de `LEIS_ESCOPO`.
+3. Roda `git pull --ff-only`.
+4. Lê as mudanças entre o commit indexado e o `HEAD` e as indexa em lotes.
+5. Indexa por inteiro as entradas novas do escopo.
+6. Lê a autoria nos commits da base inicial do histórico.
+7. Grava o commit novo no índice só no fim.
 
-If the sync stops, run it again. Each write is idempotent. A second sync without changes in the corpus changes nothing.
+Se o sync parar no meio, rode de novo. Cada gravação é idempotente. Um segundo sync sem mudanças no acervo não altera nada.
 
-The full history without file contents is about 295 MiB. The server reads only the local index and the local clone. It never calls the GitHub API.
+O histórico completo, sem o conteúdo dos arquivos, ocupa cerca de 295 MiB. O servidor lê só o índice e o clone locais. Ele nunca chama a API do GitHub.
 
-## Configuration
+## Configuração
 
-Use environment variables. Use the same values for `sync` and for the server.
+Use variáveis de ambiente, com os mesmos valores no `sync` e no servidor.
 
-| Variable | Default | Meaning |
+| Variável | Padrão | Significado |
 | --- | --- | --- |
-| `LEIS_REMOTO` | `https://github.com/viniciusdsandrade/leis.git` | Git repository of the corpus. |
-| `LEIS_RAMO` | `main` | Branch of the corpus. |
-| `LEIS_CLONE` | `~/.cache/leis-mcp/acervo` | Folder of the partial clone. |
-| `LEIS_INDICE` | `~/.cache/leis-mcp/indice.sqlite` | SQLite file of the index. |
-| `LEIS_ESCOPO` | `constituicao,federal` | Spheres and folders in the clone, for example `constituicao,federal,estaduais/SP,municipais/SP/campinas`. |
-| `LEIS_CORPO` | (empty) | Folders whose body goes into the FTS5 index, for example `constituicao,federal/leis-ordinarias`. |
-| `LEIS_ORCAMENTO_TOKENS` | `8000` | Token budget of each result. |
-| `LEIS_RG` | `rg` | ripgrep program. |
-| `LEIS_GIT` | `git` | git program. |
-| `LEIS_LOG` | `info` | Log level: `erro`, `aviso`, `info` or `depuracao`. The log goes to stderr. |
-| `LEIS_HTTP_HOST` | `127.0.0.1` | Address of `leis-mcp http`: `127.0.0.1`, `::1` or `localhost`. Other addresses are refused. |
-| `LEIS_HTTP_PORTA` | `3920` | Port of `leis-mcp http`. |
+| `LEIS_REMOTO` | `https://github.com/viniciusdsandrade/leis.git` | Repositório git do acervo. |
+| `LEIS_RAMO` | `main` | Ramo do acervo. |
+| `LEIS_CLONE` | `~/.cache/leis-mcp/acervo` | Pasta do clone parcial. |
+| `LEIS_INDICE` | `~/.cache/leis-mcp/indice.sqlite` | Arquivo SQLite do índice. |
+| `LEIS_ESCOPO` | `constituicao,federal` | Esferas e pastas que entram no clone, por exemplo `constituicao,federal,estaduais/SP,municipais/SP/campinas`. |
+| `LEIS_CORPO` | (vazio) | Pastas cujo corpo do texto entra no índice FTS5, por exemplo `constituicao,federal/leis-ordinarias`. |
+| `LEIS_ORCAMENTO_TOKENS` | `8000` | Orçamento de tokens de cada resultado. |
+| `LEIS_RG` | `rg` | Programa do ripgrep. |
+| `LEIS_GIT` | `git` | Programa do git. |
+| `LEIS_LOG` | `info` | Nível do log: `erro`, `aviso`, `info` ou `depuracao`. O log vai para o stderr. |
+| `LEIS_HTTP_HOST` | `127.0.0.1` | Endereço do `leis-mcp http`: `127.0.0.1`, `::1` ou `localhost`. Outros endereços são recusados. |
+| `LEIS_HTTP_PORTA` | `3920` | Porta do `leis-mcp http`. |
 
-When `XDG_CACHE_HOME` is set, the cache folder is `$XDG_CACHE_HOME/leis-mcp`.
+Quando `XDG_CACHE_HOME` está definida, a pasta de cache é `$XDG_CACHE_HOME/leis-mcp`.
 
-## Tools
+## Ferramentas
 
-All tools have the hints `readOnlyHint` and `idempotentHint`.
+Todas as ferramentas têm as dicas `readOnlyHint` e `idempotentHint`.
 
-| Tool | Use it to | Main parameters |
+| Ferramenta | Para que serve | Parâmetros principais |
 | --- | --- | --- |
-| `leis_buscar` | Find norms. | `texto`, `esfera`, `uf`, `municipio`, `orgao`, `tribunal`, `tipo`, `numero`, `data_de`, `data_ate`, `revogada`, `alcance` (`cabecalho` or `texto`), `limite` (10, maximum 50), `cursor`, `formato` |
-| `leis_obter` | Read a norm or one provision. | `referencia` (path, `leis://` URI, LexML URN or citation), `artigo`, `paragrafo`, `inciso`, `alinea`, `bloco`, `esfera`, `uf`, `incluir_tachado`, `cursor`, `formato` |
-| `leis_facetas` | Count norms. | `dimensoes` (`esfera`, `tipo`, `uf`, `orgao`, `tribunal`, `municipio`, `decada`), `texto`, the filters, `limite` |
-| `leis_cobertura` | Show the gaps of a slice and the state of the index. | `esfera`, `uf`, `municipio`, `orgao`, `tribunal`, `tipo` |
-| `leis_autoria` | Show the signatories of a norm, or the norms of a signatory. | `referencia` or `signatario`, `limite`, `cursor`, `formato` |
+| `leis_buscar` | Encontrar normas. | `texto`, `esfera`, `uf`, `municipio`, `orgao`, `tribunal`, `tipo`, `numero`, `data_de`, `data_ate`, `revogada`, `alcance` (`cabecalho` ou `texto`), `limite` (padrão 10, máximo 50), `cursor`, `formato` |
+| `leis_obter` | Ler uma norma ou um dispositivo. | `referencia` (caminho, URI `leis://`, URN LexML ou citação), `artigo`, `paragrafo`, `inciso`, `alinea`, `bloco`, `esfera`, `uf`, `incluir_tachado`, `cursor`, `formato` |
+| `leis_facetas` | Contar normas. | `dimensoes` (`esfera`, `tipo`, `uf`, `orgao`, `tribunal`, `municipio`, `decada`), `texto`, os filtros, `limite` |
+| `leis_cobertura` | Mostrar as lacunas de um recorte e o estado do índice. | `esfera`, `uf`, `municipio`, `orgao`, `tribunal`, `tipo` |
+| `leis_autoria` | Mostrar os signatários de uma norma, ou as normas de um signatário. | `referencia` ou `signatario`, `limite`, `cursor`, `formato` |
 
-Search rules of `texto`:
+Regras de busca do `texto`:
 
-- The norm must have all the words. A word matches only a full word: `consumo` does not match `consumidor`.
-- Put a phrase in quotation marks: `"defesa do consumidor"`.
-- Put `*` after a word of 3 letters or more to search the start of words: `consum*`.
-- Accents and case have no effect.
-- The FTS5 index and ripgrep use the same rules.
+- A norma precisa ter todas as palavras. Uma palavra só casa com a palavra inteira: `consumo` não casa com `consumidor`.
+- Ponha uma frase entre aspas: `"defesa do consumidor"`.
+- Ponha `*` depois de uma palavra de 3 letras ou mais para buscar o começo das palavras: `consum*`.
+- Acentos e maiúsculas não fazem diferença.
+- O índice FTS5 e o ripgrep seguem as mesmas regras.
 
-`municipio` accepts the city slug (`campinas`) or the form `SP/campinas` that `leis_facetas` returns.
+`municipio` aceita o slug do município (`campinas`) ou a forma `SP/campinas`, que o `leis_facetas` devolve.
 
-Examples of citations for `referencia`:
+Exemplos de citação para `referencia`:
 
 - `Lei 8.078/1990`, `Lei nº 8.078, de 11 de setembro de 1990`
 - `LC 123/2006`, `MP 2.200-2/2001`, `Decreto-Lei 5.452/1943`
@@ -111,40 +113,40 @@ Examples of citations for `referencia`:
 - `Súmula 7 do STJ`, `Súmula Vinculante 13`
 - `urn:lex:br:federal:lei:1990-09-11;8078`
 
-The server also has the resource template `leis://{caminho}`. The path is encoded, for example `leis://federal%2Fleis-ordinarias%2F1990%2Flei-8078-1990-09-11.md`. `leis_obter` gives the URI of each norm.
+O servidor também tem o template de recurso `leis://{caminho}`. O caminho vai codificado, por exemplo `leis://federal%2Fleis-ordinarias%2F1990%2Flei-8078-1990-09-11.md`. O `leis_obter` informa a URI de cada norma.
 
-## Response contract
+## Contrato de resposta
 
-- Items are compact: `caminho`, `titulo`, `tipo`, `numero`, `data`, `uf`, a short `ementa`, `situacao`, `fonte`, `versao_texto`, `baixado_em` and `ocr`. Use `formato: completo` to get all fields and the URI.
-- Each result has `fonte`, `versao_texto` and `baixado_em`. OCR text has `ocr: true` and a notice.
-- `leis_obter` removes struck text by default and tells how many parts it removed. Use `incluir_tachado: true` to see them. A provision that is only in struck text (revoked or changed) is available only with `incluir_tachado: true`, with a notice.
-- A citation without a sphere prefers the federal norm. When the result is from another sphere, the result has a notice.
-- A result without items tells the coverage of the slice. Absence in the local corpus does not prove that a norm does not exist.
-- Each result has `structuredContent` and a text block with the same JSON.
-- Each error has a code, a message and the next step.
-- A result that is larger than the token budget is cut. Use the `cursor` of the result to get the next page. Candidates, facets and coverage are cut and have `truncado: true`. The resource `leis://{caminho}` is cut with a notice that tells you to use `leis_obter` and its cursor.
+- Os itens são compactos: `caminho`, `titulo`, `tipo`, `numero`, `data`, `uf`, uma `ementa` curta, `situacao`, `fonte`, `versao_texto`, `baixado_em` e `ocr`. Use `formato: completo` para receber todos os campos e a URI.
+- Todo resultado tem `fonte`, `versao_texto` e `baixado_em`. Texto obtido por OCR vem com `ocr: true` e um aviso.
+- O `leis_obter` remove o texto tachado por padrão e informa quantos trechos removeu. Use `incluir_tachado: true` para vê-los. Um dispositivo que só existe em texto tachado, porque foi revogado ou alterado, só aparece com `incluir_tachado: true`, e vem com aviso.
+- Uma citação sem esfera prefere a norma federal. Quando o resultado é de outra esfera, ele vem com aviso.
+- Um resultado sem itens informa a cobertura do recorte. A ausência no acervo local não prova que a norma não existe.
+- Todo resultado tem `structuredContent` e um bloco de texto com o mesmo JSON.
+- Todo erro tem um código, uma mensagem e o próximo passo.
+- Um resultado maior que o orçamento de tokens é cortado. Use o `cursor` do resultado para buscar a próxima página. Candidatos, facetas e cobertura são cortados e trazem `truncado: true`. O recurso `leis://{caminho}` é cortado com um aviso que indica o `leis_obter` e o cursor dele.
 
-## Safety
+## Segurança
 
-- The server accepts only `.md` paths of norms in the clone. It refuses `..`, absolute paths, hidden segments, segments that start with `_` and symbolic links that go out of the clone.
-- Subprocesses start with an argument list and without a shell. User terms come after `--`. ripgrep runs with `--no-config` and never with `--pre`.
-- User text goes into FTS5 only as quoted strings. Operators, column filters and parentheses become plain text.
-- The server opens the index read-only. Only `sync` writes to the index and the clone.
-- `leis-mcp http` listens only on a local address. It checks the `Host` and `Origin` headers against DNS rebinding. It has no authentication. Do not expose it to a network.
+- O servidor aceita só caminhos `.md` de normas dentro do clone. Ele recusa `..`, caminhos absolutos, segmentos ocultos, segmentos que começam com `_` e links simbólicos que saem do clone.
+- Os subprocessos rodam com uma lista de argumentos e sem shell. Os termos do usuário vêm depois de `--`. O ripgrep roda com `--no-config` e nunca com `--pre`.
+- O texto do usuário entra no FTS5 só como strings entre aspas. Operadores, filtros de coluna e parênteses viram texto comum.
+- O servidor abre o índice somente para leitura. Só o `sync` escreve no índice e no clone.
+- O `leis-mcp http` escuta só em endereço local e valida os cabeçalhos `Host` e `Origin` contra DNS rebinding. Ele não tem autenticação, então não o exponha a uma rede.
 
-## Architecture
+## Arquitetura
 
 ```
-src/core/          Domain rules, use cases and ports. No MCP code and no I/O.
-src/adaptadores/   Adapters for SQLite FTS5, git, ripgrep, the file system and MCP.
-src/cli.ts         Composition root: serve, http, sync and status.
-clients/           Installation files for each MCP client.
-test/              vitest tests with small fixtures.
+src/core/          Regras de domínio, casos de uso e portas. Sem código MCP e sem I/O.
+src/adaptadores/   Adaptadores para SQLite FTS5, git, ripgrep, sistema de arquivos e MCP.
+src/cli.ts         Raiz de composição: serve, http, sync e status.
+clients/           Arquivos de instalação de cada cliente MCP.
+test/              Testes vitest com fixtures pequenas.
 ```
 
-The plan for the agents is in [docs/plan.md](docs/plan.md). The analysis of the corpus and the decisions are in [ADR 0001](docs/adr/0001-architecture-and-corpus-contract.md).
+O plano para os agentes está em [docs/plan.md](docs/plan.md). A análise do acervo e as decisões estão no [ADR 0001](docs/adr/0001-architecture-and-corpus-contract.md). Esses documentos estão em inglês.
 
-## Development
+## Desenvolvimento
 
 ```sh
 npm ci
@@ -153,12 +155,12 @@ npm test
 npm run build
 ```
 
-A tag `vX.Y.Z` starts the release workflow. It runs the tests, packs the package, checks it with `npx` and attaches it to a GitHub release. When the secret `NPM_TOKEN` exists, the workflow also publishes to the npm registry with provenance.
+Uma tag `vX.Y.Z` dispara o workflow de release. Ele roda os testes, empacota o projeto, executa o pacote com `npx` e o anexa a uma release do GitHub. Quando o segredo `NPM_TOKEN` existe, o workflow também publica no registro do npm com provenance.
 
-The GitHub Actions workflow runs these steps on Node 22 and Node 24.
+O workflow do GitHub Actions roda esses passos no Node 22 e no Node 24.
 
-## License
+## Licença
 
-The code is under the MIT license. See [LICENSE](LICENSE).
+O código está sob a licença MIT. Veja [LICENSE](LICENSE).
 
-The texts of the norms are official acts. Article 8, item IV, of Lei nº 9.610/1998 says that they are not subject to copyright.
+Os textos das normas são atos oficiais. Pelo art. 8º, inciso IV, da Lei nº 9.610/1998, eles não são objeto de proteção como direitos autorais.
