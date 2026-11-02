@@ -113,13 +113,14 @@ describe('sincronização com um repositório git local', () => {
     colocar('estaduais/SP/_falhas.jsonl', 'estaduais/SP/_falhas.jsonl');
     colocar('estaduais/PB/leis-ordinarias/2025/lei-ordinaria-100-2025-id1.md', 'estaduais/PB/leis-ordinarias/2025/lei-ordinaria-100-2025-id1.md');
     commitar('Acrescenta 3 normas estaduais\n\nAutoria: lote sem autoria por norma.');
+    mkdirSync(dirname(join(origem, CAMINHO_SP_1880)), { recursive: true });
     git(origem, ['mv', CAMINHO_SP_1880_ANTIGO, CAMINHO_SP_1880]);
     commitar('refactor: move a lei de 1880 para a pasta do ano\n\nCo-Authored-By: Ferramenta <noreply@example.com>');
     indice = abrirIndiceEscrita(join(raiz, 'indice.sqlite'));
   });
 
   afterAll(() => {
-    indice.fechar();
+    indice?.fechar();
     rmSync(raiz, { recursive: true, force: true });
   });
 
