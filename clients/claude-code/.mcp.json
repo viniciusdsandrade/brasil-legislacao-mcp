@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "leis": {
+      "command": "npx",
+      "args": ["-y", "leis-mcp"],
+      "env": {
+        "LEIS_ESCOPO": "constituicao,federal"
+      }
+    }
+  }
+}
