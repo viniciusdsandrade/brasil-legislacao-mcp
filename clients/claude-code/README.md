@@ -2,7 +2,7 @@
 
 ## Install
 
-1. Install Node.js 22 or later, git and ripgrep.
+1. Install Node.js 22 or later, git 2.37 or later and ripgrep.
 2. Get leis-mcp from the source code and build it:
 
    ```sh

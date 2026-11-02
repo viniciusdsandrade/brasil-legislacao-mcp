@@ -20,7 +20,7 @@ Version 0.1.0. The package is not on npm yet. Use it from the source code (see [
 ## Requirements
 
 - Node.js 22 or later.
-- git 2.27 or later.
+- git 2.37 or later. The sync uses `git sparse-checkout set --cone` and the cone mode as default.
 - ripgrep (`rg`). It is necessary only for body search in folders that are not in `LEIS_CORPO`.
 
 ## Install
