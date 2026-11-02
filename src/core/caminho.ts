@@ -7,6 +7,9 @@ export const CAMINHO_CONSTITUICAO = 'constituicao.md';
 const PROIBIDO_NO_SEGMENTO = /[\\\u0000-\u001f\u007f]/u;
 const MAX_SEGMENTO = 255;
 const UF = /^[A-Z]{2}$/;
+/** Tribunais sem pasta própria no topo de jurisprudencia: ficam em jurisprudencia/outros-tribunais/<tribunal>. */
+const PASTA_OUTROS_TRIBUNAIS = 'outros-tribunais';
+const TRIBUNAIS_EM_OUTROS: ReadonlySet<string> = new Set(['stm', 'tcu']);
 const ANO = /^\d{4}$/;
 const MAX_CAMINHO = 400;
 
@@ -91,7 +94,10 @@ export function analisarCaminho(caminho: string): InfoCaminho | null {
       break;
     }
     case 'jurisprudencia': {
-      if (meio.length >= 2) {
+      if (meio[0] === PASTA_OUTROS_TRIBUNAIS && meio.length >= 2) {
+        info.tribunal = meio[1] ?? null;
+        resto = meio.slice(2);
+      } else if (meio.length >= 2) {
         info.tribunal = meio[0] ?? null;
         resto = meio.slice(1);
       } else {
@@ -175,6 +181,17 @@ export function pathspecDaEntrada(entrada: string): string {
   return entrada === 'constituicao' ? CAMINHO_CONSTITUICAO : entrada;
 }
 
+/**
+ * Arquivos _falhas.jsonl das pastas acima de uma entrada do escopo, abaixo da raiz.
+ * O modo cone do sparse-checkout traz os arquivos dessas pastas.
+ */
+export function falhasAncestrais(pathspec: string): string[] {
+  const partes = pathspec.split('/');
+  const saida: string[] = [];
+  for (let fim = 1; fim < partes.length; fim += 1) saida.push(`${partes.slice(0, fim).join('/')}/_falhas.jsonl`);
+  return saida;
+}
+
 /** Pastas para o sparse-checkout em modo cone. Os arquivos da raiz sempre entram. */
 export function pastasDoCheckout(escopo: readonly string[]): string[] {
   return escopo.filter((entrada) => entrada !== 'constituicao');
@@ -238,9 +255,13 @@ export function recorteDoFiltro(partes: PartesRecorte): string {
     case 'reguladores':
       if (acrescentar(partes.orgao)) acrescentar(partes.pasta);
       break;
-    case 'jurisprudencia':
-      if (acrescentar(partes.tribunal)) acrescentar(partes.pasta);
+    case 'jurisprudencia': {
+      const emOutros = partes.tribunal !== undefined && TRIBUNAIS_EM_OUTROS.has(partes.tribunal);
+      if (emOutros) segmentos.push(PASTA_OUTROS_TRIBUNAIS);
+      // Os tribunais de outros-tribunais não têm pasta de tipo.
+      if (acrescentar(partes.tribunal) && !emOutros) acrescentar(partes.pasta);
       break;
+    }
     default:
       acrescentar(partes.pasta);
   }

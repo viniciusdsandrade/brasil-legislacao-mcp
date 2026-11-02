@@ -9,7 +9,7 @@ import {
 } from './caminho.js';
 import { analisarReferencia, normalizarNumero, type Referencia } from './citacao.js';
 import { lerCobertura, lerProgresso, progressoDoRecorte, resumirFalhas, type ResumoFalhas } from './cobertura.js';
-import { montarConsultaFts, padraoSemAcento } from './consulta-fts.js';
+import { montarConsultaFts, padroesDaBusca } from './consulta-fts.js';
 import { codificarCursor, decodificarCursor, numeroDoCursor } from './cursor.js';
 import {
   estruturar,
@@ -17,12 +17,13 @@ import {
   paginar,
   rotuloInicial,
   unidadesDePaginacao,
+  type Localizacao,
   type PedidoDispositivo,
   type PosicaoPagina,
 } from './dispositivos.js';
 import { ErroLeis } from './erros.js';
 import { caracteresDoOrcamento, normalizarOrcamento } from './orcamento.js';
-import type { Acervo, ArquivosEncontrados, BuscaTextual, ConsultaIndice, OcorrenciaTexto } from './portas.js';
+import type { Acervo, BuscaTextual, ConsultaIndice, OcorrenciaTexto } from './portas.js';
 import { arrumarParaExibir, linhaSoTachada, removerTachado, semMarcasDeTachado } from './tachado.js';
 import { dataIso, fnv1a, ordinal, slug, truncar } from './texto.js';
 import {
@@ -49,7 +50,6 @@ const TETO_CONTAGEM = 10_000;
 const MAX_ARQUIVOS_RIPGREP = 20_000;
 /** Até este número de normas no filtro, a busca no texto lê só os arquivos do filtro. */
 const MAX_CANDIDATOS_DO_INDICE = 2_000;
-const ARQUIVOS_POR_CHAMADA = 500;
 const RESERVA_METADADOS = 2_000;
 
 export type Formato = 'resumido' | 'completo';
@@ -198,8 +198,21 @@ interface FiltroLido {
 
 function lerFiltro(entrada: EntradaFiltros): FiltroLido {
   const esfera = lerEsfera(entrada.esfera);
-  const uf = lerUf(entrada.uf);
-  const municipio = textoOpcional(entrada.municipio, 'municipio', 80);
+  let uf = lerUf(entrada.uf);
+  let municipio = textoOpcional(entrada.municipio, 'municipio', 80);
+  // A faceta municipio devolve "UF/municipio"; o filtro aceita a mesma forma.
+  const combinado = municipio === undefined ? null : /^([A-Za-z]{2})\/(.+)$/.exec(municipio);
+  if (combinado !== null) {
+    const ufDoMunicipio = (combinado[1] ?? '').toUpperCase();
+    if (uf !== undefined && uf !== ufDoMunicipio) {
+      throw entradaInvalida(
+        `O municipio "${municipio ?? ''}" é de ${ufDoMunicipio}, mas uf é ${uf}.`,
+        'Use a mesma UF nos dois campos, ou informe só municipio no formato "UF/municipio".',
+      );
+    }
+    uf = ufDoMunicipio;
+    municipio = combinado[2];
+  }
   const orgao = textoOpcional(entrada.orgao, 'orgao', 80);
   const tribunal = textoOpcional(entrada.tribunal, 'tribunal', 40);
   const tipo = textoOpcional(entrada.tipo, 'tipo', 80);
@@ -362,7 +375,7 @@ export class ServicoLeis {
   private estado(indice: ConsultaIndice): EstadoIndice {
     const estado = indice.estado();
     if (estado === null) {
-      throw new ErroLeis('indice_ausente', 'O índice local não existe.', 'Rode `npx leis-mcp sync` para clonar o acervo e criar o índice.');
+      throw new ErroLeis('indice_ausente', 'O índice local não existe.', 'Rode o comando sync do leis-mcp para clonar o acervo e criar o índice.');
     }
     return estado;
   }
@@ -392,9 +405,10 @@ export class ServicoLeis {
     let avisoParcial: string | null = null;
     if (texto !== undefined && alcance === 'texto' && !corpoCobre) {
       if (pastasBusca.length === 0) throw this.foraDoEscopo(recorte, estado);
-      const padrao = padraoSemAcento(texto);
-      if (padrao === null) throw new ErroLeis('consulta_vazia', 'O texto não tem termos pesquisáveis.', 'Use palavras com duas letras ou mais.');
-      const encontrados = await this.arquivosComTexto(indice, estado, filtro, padrao, pastasBusca);
+      const padroes = padroesDaBusca(texto);
+      if (padroes.length === 0) throw new ErroLeis('consulta_vazia', 'O texto não tem termos pesquisáveis.', 'Use palavras com duas letras ou mais.');
+      const alvos = this.alvosDaBuscaTextual(indice, estado, filtro, pastasBusca);
+      const encontrados = await this.deps.buscaTextual.arquivos({ padroes, alvos, maxArquivos: MAX_ARQUIVOS_RIPGREP });
       const porCaminho = new Map(indice.porCaminhos(encontrados.caminhos, filtro).map((norma): [string, Norma] => [norma.caminho, norma]));
       const ordenadas = encontrados.caminhos.map((caminho) => porCaminho.get(caminho)).filter((norma): norma is Norma => norma !== undefined);
       total = ordenadas.length;
@@ -404,7 +418,7 @@ export class ServicoLeis {
       }
       normas = ordenadas.slice(deslocamento, deslocamento + limite + 1);
       const daPagina = normas.slice(0, limite).map((norma) => norma.caminho);
-      for (const ocorrencia of await this.deps.buscaTextual.trechos({ padrao, caminhos: daPagina })) {
+      for (const ocorrencia of await this.deps.buscaTextual.trechos({ padroes, caminhos: daPagina })) {
         if (!trechos.has(ocorrencia.caminho)) trechos.set(ocorrencia.caminho, ocorrencia);
       }
       motor = 'ripgrep';
@@ -454,37 +468,17 @@ export class ServicoLeis {
   }
 
   /**
-   * Lista, em ordem estável, os arquivos que contêm o padrão. Quando o filtro tem poucas normas
-   * no índice, procura só nesses arquivos. Senão, procura nas pastas do recorte.
+   * Alvos da busca no texto. Quando o filtro tem poucas normas no índice, a busca lê só esses
+   * arquivos. Senão, lê as pastas do recorte, e o filtro de metadados vem depois.
    */
-  private async arquivosComTexto(
-    indice: ConsultaIndice,
-    estado: EstadoIndice,
-    filtro: FiltroNormas,
-    padrao: string,
-    pastas: readonly string[],
-  ): Promise<ArquivosEncontrados> {
+  private alvosDaBuscaTextual(indice: ConsultaIndice, estado: EstadoIndice, filtro: FiltroNormas, pastas: readonly string[]): string[] {
     const candidatos = indice.contar({ fts: null, filtro, teto: MAX_CANDIDATOS_DO_INDICE });
-    if (candidatos > MAX_CANDIDATOS_DO_INDICE) {
-      return this.deps.buscaTextual.arquivos({ padrao, pastas, maxArquivos: MAX_ARQUIVOS_RIPGREP });
-    }
-    const caminhos = indice
+    if (candidatos > MAX_CANDIDATOS_DO_INDICE) return [...pastas];
+    return indice
       .buscar({ fts: null, filtro, limite: MAX_CANDIDATOS_DO_INDICE, deslocamento: 0 })
       .map((norma) => norma.caminho)
       .filter((caminho) => escopoCobre(estado.escopo, caminho))
       .sort();
-    const encontrados: ArquivosEncontrados = { caminhos: [], parcial: false };
-    for (let i = 0; i < caminhos.length; i += ARQUIVOS_POR_CHAMADA) {
-      const parte = await this.deps.buscaTextual.arquivos({
-        padrao,
-        pastas: caminhos.slice(i, i + ARQUIVOS_POR_CHAMADA),
-        maxArquivos: MAX_ARQUIVOS_RIPGREP,
-      });
-      encontrados.caminhos.push(...parte.caminhos);
-      encontrados.parcial = encontrados.parcial || parte.parcial;
-    }
-    encontrados.caminhos.sort();
-    return encontrados;
   }
 
   // -------------------------------------------------------------------------
@@ -544,10 +538,34 @@ export class ServicoLeis {
 
     if (pedido.artigo !== undefined) {
       const pedidoDispositivo: PedidoDispositivo = { ...pedido, artigo: pedido.artigo };
-      const localizacao = localizarDispositivo(estrutura, pedidoDispositivo);
+      let localizacao: Localizacao;
+      let soNoTachado = false;
+      try {
+        localizacao = localizarDispositivo(estrutura, pedidoDispositivo);
+      } catch (erro) {
+        if (!(erro instanceof ErroLeis) || erro.codigo !== 'dispositivo_nao_encontrado') throw erro;
+        // O dispositivo pode existir só numa redação tachada (revogada ou alterada).
+        let noTachado: Localizacao;
+        try {
+          noTachado = localizarDispositivo(estruturar(originais.map(semMarcasDeTachado)), pedidoDispositivo);
+        } catch {
+          throw erro;
+        }
+        if (!incluirTachado) {
+          throw new ErroLeis(
+            'dispositivo_nao_encontrado',
+            `${erro.message} O dispositivo aparece só em redação tachada, que é texto revogado ou alterado.`,
+            'Chame de novo com incluir_tachado=true para ler a redação tachada.',
+            erro.sugestoes,
+          );
+        }
+        localizacao = noTachado;
+        soNoTachado = true;
+        avisos.push('O dispositivo aparece só em redação tachada: é texto revogado ou alterado, não a redação vigente.');
+      }
       let inicio = localizacao.inicio;
       let fim = localizacao.fim;
-      if (incluirTachado) [inicio, fim] = ajustarComTachado(originais, inicio, fim);
+      if (incluirTachado && !soNoTachado) [inicio, fim] = ajustarComTachado(originais, inicio, fim);
       const textoDispositivo = arrumarParaExibir(saida.slice(inicio, fim).join('\n'));
       const caput =
         localizacao.caput === null ? null : arrumarParaExibir(saida.slice(localizacao.caput.inicio, localizacao.caput.fim).join('\n'));
@@ -601,8 +619,8 @@ export class ServicoLeis {
 
   async facetas(entrada: EntradaFacetas): Promise<Resposta> {
     const indice = this.deps.indice();
-    this.estado(indice);
-    const { filtro } = lerFiltro(entrada);
+    const estado = this.estado(indice);
+    const { filtro, recorte } = lerFiltro(entrada);
     const limite = inteiro(entrada.limite, 'limite', 1, 100, 20);
     const pedidas = entrada.dimensoes ?? ['esfera', 'tipo', 'decada'];
     if (!Array.isArray(pedidas)) throw entradaInvalida('dimensoes deve ser uma lista.', `Use valores de: ${DIMENSOES.join(', ')}.`);
@@ -636,6 +654,11 @@ export class ServicoLeis {
     while (porDimensao > 5 && JSON.stringify(resposta).length > this.maximoCaracteres) {
       porDimensao = Math.max(5, Math.floor(porDimensao / 2));
       resposta = montar();
+    }
+    if (porDimensao < limite) resposta['truncado'] = true;
+    if (total === 0) {
+      resposta['mensagem'] = `Nenhuma norma no filtro. ${AVISO_AUSENCIA}`;
+      resposta['cobertura'] = await this.montarCobertura(indice, estado, filtro, recorte, true);
     }
     return resposta;
   }
@@ -672,7 +695,18 @@ export class ServicoLeis {
       this.deps.acervo.lerRaiz('COBERTURA.md'),
     ]);
     const progresso = progressoMd === null ? null : lerProgresso(progressoMd);
-    const linhas = progresso === null ? [] : progressoDoRecorte(progresso, recorte === CAMINHO_CONSTITUICAO ? 'constituicao.md' : recorte);
+    let linhas = progresso === null ? [] : progressoDoRecorte(progresso, recorte === CAMINHO_CONSTITUICAO ? 'constituicao.md' : recorte);
+    if (progresso !== null && linhas.length === 0 && filtro.tipoChave !== undefined) {
+      // A pasta do tipo muda entre esferas (a RFB não tem pasta de tipo): tenta o recorte sem ela.
+      const semTipo = recorteDoFiltro({
+        esfera: filtro.esfera,
+        uf: filtro.uf,
+        municipio: filtro.municipio,
+        orgao: filtro.orgao,
+        tribunal: filtro.tribunal,
+      });
+      if (semTipo !== recorte) linhas = progressoDoRecorte(progresso, semTipo === CAMINHO_CONSTITUICAO ? 'constituicao.md' : semTipo);
+    }
     const cobertura = coberturaMd === null ? null : lerCobertura(coberturaMd);
     const linhaUf = filtro.uf === undefined ? null : (cobertura?.ufs.find((linha) => linha.uf === filtro.uf) ?? null);
 
@@ -689,7 +723,7 @@ export class ServicoLeis {
     const lacunas: string[] = [];
     if (!noEscopo) {
       lacunas.push(
-        `O recorte "${recorte}" está fora do escopo local (${estado.escopo.join(', ')}). Acrescente-o a LEIS_ESCOPO e rode \`npx leis-mcp sync\`.`,
+        `O recorte "${recorte}" está fora do escopo local (${estado.escopo.join(', ')}). Acrescente-o a LEIS_ESCOPO e rode o comando sync do leis-mcp.`,
       );
     }
     for (const linha of linhas) {
@@ -750,6 +784,13 @@ export class ServicoLeis {
       resposta['progresso'] = (resposta['progresso'] as unknown[]).slice(0, 5);
       resposta['falhas'] = falhas.slice(0, 3);
       resposta['lacunas'] = lacunas.slice(0, 10);
+      resposta['truncado'] = true;
+    }
+    if (JSON.stringify(resposta).length > this.maximoCaracteres) {
+      resposta['progresso'] = [];
+      resposta['falhas'] = falhas.slice(0, 1);
+      resposta['lacunas'] = lacunas.slice(0, 3).map((lacuna) => truncar(lacuna, 300));
+      resposta['proximo_passo'] = 'A resposta passou do orçamento de tokens. Use um recorte menor (esfera, uf, tipo) para ver mais detalhes.';
     }
     return resposta;
   }
@@ -779,6 +820,7 @@ export class ServicoLeis {
           autoria: null,
           mensagem:
             'Sem autoria registrada para esta norma. Só a base inicial do histórico tem signatários; os lotes posteriores não registram autoria.',
+          cobertura_autoria: { normas_com_autoria: indice.contarComAutoria(), normas_no_indice: estado.total },
           observacao,
         };
       }
@@ -816,7 +858,16 @@ export class ServicoLeis {
   // Recurso leis://{caminho}
 
   async lerRecurso(caminho: string): Promise<string> {
-    return this.deps.acervo.ler(exigirCaminho(caminho));
+    const valido = exigirCaminho(caminho);
+    const texto = await this.deps.acervo.ler(valido);
+    const maximo = this.maximoCaracteres;
+    if (texto.length <= maximo) return texto;
+    const quebra = texto.lastIndexOf('\n', maximo);
+    const parte = texto.slice(0, quebra > maximo * 0.5 ? quebra : maximo);
+    return (
+      `${parte}\n\n[Texto truncado: ${parte.length} de ${texto.length} caracteres, pelo orçamento de tokens (LEIS_ORCAMENTO_TOKENS). ` +
+      `Use leis_obter com referencia "${valido}" e o cursor da resposta para ler o resto.]`
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -837,7 +888,7 @@ export class ServicoLeis {
     return new ErroLeis(
       'fora_do_escopo',
       `O recorte "${recorte || '(acervo inteiro)'}" está fora do escopo local (${estado.escopo.join(', ')}).`,
-      `Acrescente "${recorte}" a LEIS_ESCOPO e rode \`npx leis-mcp sync\`.`,
+      `Acrescente "${recorte}" a LEIS_ESCOPO e rode o comando sync do leis-mcp.`,
     );
   }
 
@@ -914,11 +965,20 @@ export class ServicoLeis {
   ): Resolucao {
     const primeira = achadas[0];
     if (primeira === undefined) throw this.naoEncontrada(descricao, estado);
-    if (achadas.length === 1) return { norma: primeira, avisos: [] };
+    // Sem esfera na citação, uma norma única de outra esfera vem com aviso.
+    const comAviso = (norma: Norma): Resolucao => {
+      if (!preferirFederal || norma.esfera === 'federal') return { norma, avisos: [] };
+      const onde = norma.uf === null ? norma.esfera : `${norma.esfera}/${norma.uf}`;
+      const aviso = escopoCobre(estado.escopo, 'federal')
+        ? `A citação não diz a esfera e o acervo local não tem norma federal com este número. O resultado é de ${onde}.`
+        : `A citação não diz a esfera, e a esfera federal está fora do escopo local (${estado.escopo.join(', ')}). O resultado é de ${onde}. Uma norma federal com este número pode existir.`;
+      return { norma, avisos: [aviso] };
+    };
+    if (achadas.length === 1) return comAviso(primeira);
     if (data !== null) {
       const mesmaData = achadas.filter((norma) => norma.data === data);
       const unica = mesmaData[0];
-      if (mesmaData.length === 1 && unica !== undefined) return { norma: unica, avisos: [] };
+      if (mesmaData.length === 1 && unica !== undefined) return comAviso(unica);
     }
     if (preferirFederal) {
       const federais = achadas.filter((norma) => norma.esfera === 'federal');
@@ -936,11 +996,15 @@ export class ServicoLeis {
   }
 
   private respostaCandidatos(resolucao: { candidatos: Norma[]; mensagem: string }, formato: Formato): Resposta {
-    return {
-      candidatos: resolucao.candidatos.map((norma) => item(norma, formato)),
+    const candidatos = resolucao.candidatos.map((norma) => item(norma, formato));
+    const resposta: Resposta = {
+      candidatos,
+      total_candidatos: resolucao.candidatos.length,
       mensagem: resolucao.mensagem,
       proximo_passo: 'Chame a ferramenta de novo com o caminho de um dos candidatos em referencia, ou informe esfera, uf ou o ano.',
     };
+    if (caberItens(resposta, candidatos, this.maximoCaracteres) < resolucao.candidatos.length) resposta['truncado'] = true;
+    return resposta;
   }
 }
 

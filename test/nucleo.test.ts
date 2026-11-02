@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { LeitorLogAutoria, interpretarRegistroDeLog } from '../src/core/autoria.js';
 import { separarCabecalho } from '../src/core/cabecalho.js';
-import { analisarCaminho, normalizarEscopo, recorteDoFiltro } from '../src/core/caminho.js';
+import { analisarCaminho, falhasAncestrais, normalizarEscopo, recorteDoFiltro } from '../src/core/caminho.js';
 import { analisarReferencia, normalizarNumero } from '../src/core/citacao.js';
 import { lerCobertura, lerProgresso, padraoTocaRecorte, progressoDoRecorte, resumirFalhas } from '../src/core/cobertura.js';
-import { montarConsultaFts, padraoSemAcento } from '../src/core/consulta-fts.js';
+import { montarConsultaFts, padroesDaBusca } from '../src/core/consulta-fts.js';
 import { codificarCursor, decodificarCursor, numeroDoCursor } from '../src/core/cursor.js';
 import { analisarDocumento, derivarEmenta } from '../src/core/documento.js';
 import { estruturar, localizarDispositivo, paginar, type Estrutura } from '../src/core/dispositivos.js';
@@ -68,6 +68,18 @@ describe('caminhos e escopo', () => {
     expect(analisarCaminho('jurisprudencia/regimentos/regimento-tst.md')).toMatchObject({ tribunal: null, pasta: 'regimentos' });
     expect(analisarCaminho('tratados/oit/C100.md')).toMatchObject({ esfera: 'tratados', pasta: 'oit' });
     expect(analisarCaminho('constituicao.md')).toMatchObject({ esfera: 'constituicao' });
+  });
+
+  it('lê o tribunal de jurisprudencia/outros-tribunais e monta o recorte dele', () => {
+    expect(analisarCaminho('jurisprudencia/outros-tribunais/tcu/sumula-1.md')).toMatchObject({ tribunal: 'tcu', pasta: null });
+    expect(recorteDoFiltro({ esfera: 'jurisprudencia', tribunal: 'tcu', pasta: 'sumulas' })).toBe('jurisprudencia/outros-tribunais/tcu');
+    expect(recorteDoFiltro({ tribunal: 'stj', pasta: 'sumulas' })).toBe('jurisprudencia/stj/sumulas');
+  });
+
+  it('lista os _falhas.jsonl das pastas acima de uma entrada do escopo', () => {
+    expect(falhasAncestrais('estaduais/SP/leis-ordinarias')).toEqual(['estaduais/_falhas.jsonl', 'estaduais/SP/_falhas.jsonl']);
+    expect(falhasAncestrais('federal')).toEqual([]);
+    expect(falhasAncestrais('constituicao.md')).toEqual([]);
   });
 
   it('não trata como norma o que fica fora das pastas de normas', () => {
@@ -157,6 +169,14 @@ describe('referências e citações', () => {
 });
 
 describe('tachado', () => {
+  it('não apaga texto quando um parágrafo tem número ímpar de ~~', () => {
+    const texto = 'ruído de OCR ~~ no meio\ne ~~texto real~~ depois\n\n~~velho~~ novo';
+    const resultado = removerTachado(texto);
+    expect(resultado.texto).toContain('ruído de OCR ~~ no meio\ne ~~texto real~~ depois');
+    expect(resultado.texto).not.toContain('velho');
+    expect(resultado.removidos).toBe(1);
+  });
+
   it('remove ~~ e <del> e mantém o número de linhas', () => {
     const texto = 'a\n~~velho~~ novo\n~~linha\ninteira~~\n\n~~não\n\nfecha~~\n<table><tr><td><del>x</del> y</td></tr></table>';
     const resultado = removerTachado(texto);
@@ -289,10 +309,15 @@ describe('consulta FTS5 e ripgrep', () => {
     expect(montarConsultaFts('!!! ---')).toBeNull();
   });
 
-  it('monta um padrão que ignora acentos', () => {
-    const padrao = padraoSemAcento('acao civil');
-    expect(padrao).not.toBeNull();
-    expect(new RegExp(padrao ?? '', 'i').test('Ação  Civil pública')).toBe(true);
+  it('monta um padrão por termo, com palavra inteira, prefixo, frase e sem acento', () => {
+    const casa = (texto: string, linha: string): boolean[] =>
+      padroesDaBusca(texto).map((padrao) => new RegExp(padrao, 'iu').test(linha));
+    expect(casa('acao civil', 'Ação  Civil pública')).toEqual([true, true]);
+    expect(casa('consumo', 'proteção do consumidor')).toEqual([false]);
+    expect(casa('consum*', 'proteção do consumidor')).toEqual([true]);
+    expect(casa('"defesa do consumidor"', 'a defesa  do consumidor.')).toEqual([true]);
+    expect(casa('"defesa do consumidor"', 'defesa e do consumidor')).toEqual([false]);
+    expect(padroesDaBusca('!!! ---')).toEqual([]);
   });
 });
 

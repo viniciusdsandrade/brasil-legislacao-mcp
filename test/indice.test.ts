@@ -107,6 +107,21 @@ describe('escrita idempotente do índice', () => {
     expect(caminhos).toEqual(['federal/leis-ordinarias/2002/lei-10406-2002-01-10.md']);
   });
 
+  it('mantém as falhas permitidas fora do escopo, conta a autoria e poda signatários sem autoria', () => {
+    const outro = criarIndiceDasFixtures({ autorias: AUTORIAS_DE_TESTE });
+    try {
+      expect(outro.indice.contarComAutoria()).toBe(2);
+      outro.indice.removerForaDoEscopo(['federal'], ['estaduais/SP/_falhas.jsonl']);
+      expect(outro.indice.arquivosDeFalhas()).toEqual(['estaduais/SP/_falhas.jsonl']);
+      expect(outro.indice.contarComAutoria()).toBe(1);
+      expect(outro.indice.podarSignatarios()).toBe(1);
+      expect(outro.indice.signatariosParecidos('Estado de São Paulo', 5)).toEqual([]);
+      expect(outro.indice.podarSignatarios()).toBe(0);
+    } finally {
+      outro.fechar();
+    }
+  });
+
   it('remove normas e tudo fora do escopo', () => {
     expect(teste.indice.removerNormas(['federal/medidas-provisorias/2001/mpv-2200-2-2001-08-24.md'])).toBe(1);
     expect(teste.indice.contarNormas()).toBe(13);

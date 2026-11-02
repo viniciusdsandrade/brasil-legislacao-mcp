@@ -1,11 +1,12 @@
 import { LeitorLogAutoria } from './autoria.js';
-import { analisarCaminho, escopoCobre, normalizarEscopo, pastasDoCheckout, pathspecDaEntrada } from './caminho.js';
+import { analisarCaminho, escopoCobre, falhasAncestrais, normalizarEscopo, pastasDoCheckout, pathspecDaEntrada } from './caminho.js';
 import { ErroLeis } from './erros.js';
 import { registroDaNorma } from './indexacao.js';
 import type { GravadorIndice, LeitorArquivos, Mudanca, Relogio, RepositorioGit } from './portas.js';
 import type { RegistroAutoria, RegistroNorma } from './tipos.js';
 
-export const VERSAO_ESQUEMA = 1;
+/** Versão 2: tribunal de jurisprudencia/outros-tribunais e falhas das pastas acima do escopo. */
+export const VERSAO_ESQUEMA = 2;
 const TAMANHO_LOTE = 500;
 const LOTE_AUTORIA = 2_000;
 const LEITURAS_SIMULTANEAS = 16;
@@ -169,8 +170,11 @@ export async function sincronizar(deps: DependenciasSync, configuracao: Configur
   if (escopo.length === 0) {
     throw new ErroLeis('entrada_invalida', 'O escopo está vazio.', 'Defina LEIS_ESCOPO, por exemplo "constituicao,federal".');
   }
-  const corpo = normalizarEscopo(configuracao.corpo).filter((entrada) => escopoCobre(escopo, pathspecDaEntrada(entrada)));
+  // O corpo vale só dentro do escopo: LEIS_CORPO=estaduais com LEIS_ESCOPO=estaduais/SP indexa o corpo de SP.
+  const corpo = intersecao(normalizarEscopo(configuracao.corpo), escopo);
   const pathspecs = escopo.map(pathspecDaEntrada);
+  const ancestraisDe = (specs: readonly string[]): string[] =>
+    [...new Set(specs.flatMap(falhasAncestrais))].filter((caminho) => !escopoCobre(escopo, caminho));
 
   if (await deps.git.existe()) {
     const remoto = await deps.git.remotoAtual();
@@ -204,7 +208,7 @@ export async function sincronizar(deps: DependenciasSync, configuracao: Configur
   const corpoAnterior = lerLista(gravador.lerMeta('corpo'));
   const historicoValido = anterior !== null && (await deps.git.temCommit(anterior));
 
-  const removidasEscopo = gravador.removerForaDoEscopo(pathspecs);
+  const removidasEscopo = gravador.removerForaDoEscopo(pathspecs, ancestraisDe(pathspecs));
   // Antes de reler entradas, o índice declara só o que continua completo. Se o sync parar
   // no meio, a próxima rodada relê o que faltou, mesmo que o escopo volte ao valor antigo.
   const escopoGarantido = intersecao(escopo, escopoAnterior);
@@ -233,14 +237,17 @@ export async function sincronizar(deps: DependenciasSync, configuracao: Configur
   const processador = new ProcessadorDeLotes(deps, corpo);
   if (historicoValido && anterior !== head && restantes.length > 0) {
     deps.log('info', 'lendo as mudanças desde o commit indexado', { de: anterior, ate: head });
-    for await (const mudanca of deps.git.mudancas(anterior, head, restantes)) await processador.acrescentar(mudanca);
+    for await (const mudanca of deps.git.mudancas(anterior, head, [...restantes, ...ancestraisDe(restantes)])) {
+      await processador.acrescentar(mudanca);
+    }
     await processador.descarregar();
   }
   for (const spec of reescaneadas) {
     deps.log('info', 'indexando entrada do escopo', { entrada: spec });
     // Marca e varre: o que estava no índice e não está mais na árvore sai do índice.
-    const sobras = new Set([...gravador.caminhosSob(spec), ...gravador.falhasSob(spec)]);
-    for await (const caminho of deps.git.arquivos(head, [spec])) {
+    const acima = ancestraisDe([spec]);
+    const sobras = new Set([...gravador.caminhosSob(spec), ...gravador.falhasSob(spec), ...acima.flatMap((caminho) => gravador.falhasSob(caminho))]);
+    for await (const caminho of deps.git.arquivos(head, [spec, ...acima])) {
       sobras.delete(caminho);
       await processador.acrescentar({ status: 'A', caminho });
     }
@@ -257,6 +264,7 @@ export async function sincronizar(deps: DependenciasSync, configuracao: Configur
     autorias += await lerAutoria(deps, restantes, `${anterior}..${head}`);
   }
   const religadas = gravador.religarAutoria();
+  gravador.podarSignatarios();
 
   const houveMudanca = processador.gravadas + processador.removidas + removidasEscopo + autorias > 0 || anterior !== head;
   const sincronizadoEm = deps.relogio.agora().toISOString();

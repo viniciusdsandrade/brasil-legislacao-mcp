@@ -9,7 +9,8 @@ export interface ConsultaFts {
   termos: string[];
 }
 
-interface Termo {
+export interface Termo {
+  /** Palavra, ou palavras de uma frase separadas por um espaço. */
   valor: string;
   prefixo: boolean;
 }
@@ -19,14 +20,11 @@ function aspas(valor: string): string {
 }
 
 /**
- * Monta uma expressão FTS5 segura: cada palavra vira uma string entre aspas; frases entre
- * aspas viram uma frase; operadores, filtros de coluna e parênteses do usuário viram texto.
- * Termos são unidos por AND. "palavra*" vira busca por prefixo (3 letras ou mais).
+ * Lê os termos da busca: frases entre aspas, palavras e prefixos ("palavra*", 3 letras ou mais).
+ * Operadores, filtros de coluna e parênteses do usuário viram texto. O FTS5 e o ripgrep usam
+ * os mesmos termos, então as duas buscas têm a mesma regra: o documento precisa ter todos.
  */
-export function montarConsultaFts(texto: string, colunas: readonly string[] = []): ConsultaFts | null {
-  for (const coluna of colunas) {
-    if (!COLUNA.test(coluna)) throw new ErroLeis('interno', `Coluna FTS inválida: ${coluna}.`, 'Corrija o código.');
-  }
+export function extrairTermos(texto: string): Termo[] {
   const termos: Termo[] = [];
   const semFrases = texto.normalize('NFC').replace(/["“”]([^"“”]{1,200})["“”]/g, (_trecho, frase: string) => {
     const palavras = frase.split(/[^\p{L}\p{N}]+/u).filter((palavra) => palavra !== '');
@@ -39,6 +37,18 @@ export function montarConsultaFts(texto: string, colunas: readonly string[] = []
     if (valor.length < 2 && !/\d/.test(valor)) continue;
     termos.push({ valor, prefixo: encontrado[2] === '*' && valor.length >= 3 });
   }
+  return termos;
+}
+
+/**
+ * Monta uma expressão FTS5 segura: cada palavra vira uma string entre aspas; frases entre
+ * aspas viram uma frase. Termos são unidos por AND. "palavra*" vira busca por prefixo.
+ */
+export function montarConsultaFts(texto: string, colunas: readonly string[] = []): ConsultaFts | null {
+  for (const coluna of colunas) {
+    if (!COLUNA.test(coluna)) throw new ErroLeis('interno', `Coluna FTS inválida: ${coluna}.`, 'Corrija o código.');
+  }
+  const termos = extrairTermos(texto);
   if (termos.length === 0) return null;
   const filtro = colunas.length > 0 ? `{${colunas.join(' ')}} : ` : '';
   return {
@@ -57,29 +67,29 @@ const VARIANTES: Readonly<Record<string, string>> = {
   n: 'nñ',
 };
 
+/** Fora de letra e dígito: o limite de um termo, como no tokenizador unicode61 do FTS5. */
+const SEPARADOR = '[^\\p{L}\\p{N}]';
+
+/** Uma palavra com classes que ignoram acento: "acao" casa "ação". Caracteres especiais são escapados. */
+function semAcento(palavra: string): string {
+  return [...palavra]
+    .map((caractere) => {
+      const base = caractere.normalize('NFD').replace(/\p{M}+/gu, '').toLowerCase();
+      const variantes = VARIANTES[base];
+      if (variantes) return `[${variantes}${variantes.toUpperCase()}]`;
+      return caractere.replace(/[\\^$.*+?()[\]{}|/-]/g, '\\$&');
+    })
+    .join('');
+}
+
 /**
- * Padrão de regex para o ripgrep que ignora acentos: "acao civil" casa "Ação  Civil".
- * A busca trata o texto como uma frase. Caracteres especiais são escapados.
+ * Padrões de regex para o ripgrep, um por termo. O arquivo precisa casar todos (AND), como no
+ * FTS5. Cada termo casa a palavra inteira; "palavra*" casa o prefixo; uma frase casa as palavras
+ * em sequência. Os padrões ignoram acentos e usam a mesma sintaxe no ripgrep e no JavaScript.
  */
-export function padraoSemAcento(texto: string): string | null {
-  const palavras = texto
-    .normalize('NFC')
-    .split(/\s+/)
-    .map((palavra) => palavra.trim())
-    .filter((palavra) => palavra !== '')
-    .slice(0, MAX_TERMOS);
-  if (palavras.join('').replace(/[^\p{L}\p{N}]/gu, '').length < 2) return null;
-  const regex = palavras
-    .map((palavra) =>
-      [...palavra]
-        .map((caractere) => {
-          const base = caractere.normalize('NFD').replace(/\p{M}+/gu, '').toLowerCase();
-          const variantes = VARIANTES[base];
-          if (variantes) return `[${variantes}${variantes.toUpperCase()}]`;
-          return caractere.replace(/[\\^$.*+?()[\]{}|/-]/g, '\\$&');
-        })
-        .join(''),
-    )
-    .join('\\s+');
-  return regex;
+export function padroesDaBusca(texto: string): string[] {
+  return extrairTermos(texto).map((termo) => {
+    const miolo = termo.valor.split(' ').map(semAcento).join(`${SEPARADOR}+`);
+    return `(?:^|${SEPARADOR})${miolo}${termo.prefixo ? '' : `(?:${SEPARADOR}|$)`}`;
+  });
 }

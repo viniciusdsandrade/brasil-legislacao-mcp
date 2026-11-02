@@ -40,7 +40,7 @@ export class AcervoLocal implements Acervo {
       throw new ErroLeis(
         'nao_encontrada',
         `O arquivo ${valido} não está no clone local.`,
-        'Rode `npx leis-mcp sync`. Se o caminho fica fora de LEIS_ESCOPO, acrescente a pasta ao escopo.',
+        'Rode o comando sync do leis-mcp. Se o caminho fica fora de LEIS_ESCOPO, acrescente a pasta ao escopo.',
       );
     }
     return readFile(real, 'utf8');

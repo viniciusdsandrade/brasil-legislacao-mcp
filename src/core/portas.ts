@@ -44,6 +44,8 @@ export interface ConsultaIndice {
   signatariosParecidos(nome: string, limite: number): string[];
   /** Caminhos dos arquivos _falhas.jsonl que o sync registrou. */
   arquivosDeFalhas(): string[];
+  /** Normas do índice com autoria registrada. */
+  contarComAutoria(): number;
 }
 
 /** Escrita do índice. Só o comando sync usa esta porta. */
@@ -54,8 +56,13 @@ export interface GravadorIndice {
   limpar(): void;
   gravarNormas(registros: readonly RegistroNorma[]): void;
   removerNormas(caminhos: readonly string[]): number;
-  /** Apaga normas, autoria e falhas fora dos pathspecs do escopo. */
-  removerForaDoEscopo(pathspecs: readonly string[]): number;
+  /**
+   * Apaga normas, autoria e falhas fora dos pathspecs do escopo. Os arquivos de falhas em
+   * falhasPermitidas ficam, mesmo fora dos pathspecs.
+   */
+  removerForaDoEscopo(pathspecs: readonly string[], falhasPermitidas?: readonly string[]): number;
+  /** Apaga signatários sem nenhuma autoria. Devolve quantos apagou. */
+  podarSignatarios(): number;
   gravarAutoria(registros: readonly RegistroAutoria[]): void;
   /** Liga a autoria cujo caminho da base sumiu à norma de mesma fonte. Devolve quantas ligou. */
   religarAutoria(): number;
@@ -94,10 +101,13 @@ export interface ArquivosEncontrados {
 
 /** Busca no corpo dos arquivos, fora do índice (ripgrep). */
 export interface BuscaTextual {
-  /** Todos os arquivos das pastas que casam com o padrão, até o limite. */
-  arquivos(parametros: { padrao: string; pastas: readonly string[]; maxArquivos: number }): Promise<ArquivosEncontrados>;
-  /** A primeira ocorrência do padrão em cada arquivo, para mostrar o trecho. */
-  trechos(parametros: { padrao: string; caminhos: readonly string[] }): Promise<OcorrenciaTexto[]>;
+  /**
+   * Arquivos dos alvos (pastas ou arquivos) que casam com todos os padrões (AND), até o limite.
+   * A lista sai em ordem estável.
+   */
+  arquivos(parametros: { padroes: readonly string[]; alvos: readonly string[]; maxArquivos: number }): Promise<ArquivosEncontrados>;
+  /** A primeira linha de cada arquivo que casa com algum dos padrões, para mostrar o trecho. */
+  trechos(parametros: { padroes: readonly string[]; caminhos: readonly string[] }): Promise<OcorrenciaTexto[]>;
 }
 
 export type StatusMudanca = 'A' | 'M' | 'D';

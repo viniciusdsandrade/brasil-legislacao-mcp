@@ -206,4 +206,11 @@ describe('sincronização com um repositório git local', () => {
     const local = new GitLocal({ binario: 'git', diretorio: pasta, remoto: 'https://example.com/acervo/leis.git', ramo: 'main' });
     expect(await local.remotoAtual()).toBe('https://example.com/acervo/leis.git');
   });
+
+  it('registra o _falhas.jsonl da pasta acima de uma entrada e limita o corpo ao escopo', async () => {
+    const relatorio = await sync(['estaduais/SP/leis-ordinarias'], ['estaduais']);
+    expect(relatorio).toMatchObject({ escopo: ['estaduais/SP/leis-ordinarias'], corpo: ['estaduais/SP/leis-ordinarias'], normas: 2 });
+    expect(indice.arquivosDeFalhas()).toEqual(['estaduais/SP/_falhas.jsonl']);
+    expect(indice.porCaminho(CAMINHO_SP_1880)).not.toBeNull();
+  });
 });

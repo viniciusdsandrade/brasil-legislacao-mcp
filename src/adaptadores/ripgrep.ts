@@ -54,20 +54,50 @@ function erroAusente(): ErroLeis {
   return new ErroLeis(
     'busca_textual_indisponivel',
     'O ripgrep (rg) não foi encontrado.',
-    'Instale o ripgrep, informe o caminho em LEIS_RG, ou indexe o corpo com LEIS_CORPO e rode `leis-mcp sync`.',
+    'Instale o ripgrep, informe o caminho em LEIS_RG, ou indexe o corpo com LEIS_CORPO e rode o comando sync do leis-mcp.',
   );
 }
 
-/** Busca no corpo dos arquivos do clone com o ripgrep, só nas pastas do filtro. */
+/** Arquivos por chamada quando os alvos são arquivos: mantém a linha de comando curta. */
+const ALVOS_POR_CHAMADA = 500;
+
+/** Busca no corpo dos arquivos do clone com o ripgrep, só nos alvos do filtro. */
 export class RipgrepLocal implements BuscaTextual {
   constructor(private readonly opcoes: { binario: string; raiz: string; tempoMaximoMs?: number }) {}
 
-  async arquivos(parametros: { padrao: string; pastas: readonly string[]; maxArquivos: number }): Promise<ArquivosEncontrados> {
-    parametros.pastas.forEach(validarAlvo);
+  /**
+   * Casa todos os padrões (AND): o primeiro padrão lê os alvos; cada padrão seguinte lê só
+   * os arquivos que sobraram. A lista sai em ordem de caminho.
+   */
+  async arquivos(parametros: { padroes: readonly string[]; alvos: readonly string[]; maxArquivos: number }): Promise<ArquivosEncontrados> {
+    parametros.alvos.forEach(validarAlvo);
+    const [primeiro, ...resto] = parametros.padroes;
+    if (primeiro === undefined || parametros.alvos.length === 0) return { caminhos: [], parcial: false };
+    let atual = await this.listarEmLotes(primeiro, parametros.alvos, parametros.maxArquivos);
+    for (const padrao of resto) {
+      if (atual.caminhos.length === 0) break;
+      const seguinte = await this.listarEmLotes(padrao, atual.caminhos, parametros.maxArquivos);
+      atual = { caminhos: seguinte.caminhos, parcial: atual.parcial || seguinte.parcial };
+    }
+    return { caminhos: [...atual.caminhos].sort(), parcial: atual.parcial };
+  }
+
+  private async listarEmLotes(padrao: string, alvos: readonly string[], maxArquivos: number): Promise<ArquivosEncontrados> {
+    const caminhos: string[] = [];
+    let parcial = false;
+    for (let i = 0; i < alvos.length && caminhos.length < maxArquivos; i += ALVOS_POR_CHAMADA) {
+      const parte = await this.listar(padrao, alvos.slice(i, i + ALVOS_POR_CHAMADA), maxArquivos - caminhos.length);
+      caminhos.push(...parte.caminhos);
+      parcial = parcial || parte.parcial;
+    }
+    return { caminhos, parcial: parcial || caminhos.length >= maxArquivos };
+  }
+
+  private async listar(padrao: string, alvos: readonly string[], maxArquivos: number): Promise<ArquivosEncontrados> {
     const caminhos: string[] = [];
     let parcial = false;
     try {
-      for await (const linha of fluxo(this.opcoes.binario, argumentosRipgrepArquivos(parametros.padrao, parametros.pastas), {
+      for await (const linha of fluxo(this.opcoes.binario, argumentosRipgrepArquivos(padrao, alvos), {
         cwd: this.opcoes.raiz,
         separador: '\0',
         codigosAceitos: [0, 1],
@@ -76,7 +106,7 @@ export class RipgrepLocal implements BuscaTextual {
         const caminho = linha.replace(/^\n+|\n+$/g, '');
         if (caminho === '') continue;
         caminhos.push(caminho);
-        if (caminhos.length >= parametros.maxArquivos) {
+        if (caminhos.length >= maxArquivos) {
           parcial = true;
           break;
         }
@@ -87,18 +117,19 @@ export class RipgrepLocal implements BuscaTextual {
       throw new ErroLeis(
         'busca_textual_indisponivel',
         `A busca no texto falhou: ${erro instanceof Error ? erro.message : String(erro)}`,
-        'Confira se as pastas do escopo estão no clone (rode `leis-mcp sync`), ou use alcance=cabecalho.',
+        'Confira se as pastas do escopo estão no clone (rode o comando sync do leis-mcp), ou use alcance=cabecalho.',
       );
     }
     return { caminhos, parcial };
   }
 
-  async trechos(parametros: { padrao: string; caminhos: readonly string[] }): Promise<OcorrenciaTexto[]> {
-    if (parametros.caminhos.length === 0) return [];
+  async trechos(parametros: { padroes: readonly string[]; caminhos: readonly string[] }): Promise<OcorrenciaTexto[]> {
+    if (parametros.caminhos.length === 0 || parametros.padroes.length === 0) return [];
     parametros.caminhos.forEach(validarAlvo);
+    const padrao = parametros.padroes.map((item) => `(?:${item})`).join('|');
     const ocorrencias: OcorrenciaTexto[] = [];
     try {
-      for await (const linha of fluxo(this.opcoes.binario, argumentosRipgrep(parametros.padrao, parametros.caminhos), {
+      for await (const linha of fluxo(this.opcoes.binario, argumentosRipgrep(padrao, parametros.caminhos), {
         cwd: this.opcoes.raiz,
         separador: '\n',
         codigosAceitos: [0, 1, ERRO_DO_RIPGREP],

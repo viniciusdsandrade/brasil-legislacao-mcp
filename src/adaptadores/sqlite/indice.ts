@@ -526,6 +526,16 @@ export class IndiceSqlite implements ConsultaIndice, GravadorIndice {
     return maiorPalavra.length >= 3 ? buscar(`%${escaparLike(maiorPalavra)}%`) : [];
   }
 
+  contarComAutoria(): number {
+    return (
+      this.db
+        .prepare<[], { total: number }>(
+          'SELECT count(DISTINCT a.caminho) AS total FROM autoria a WHERE EXISTS (SELECT 1 FROM normas n WHERE n.caminho = a.caminho)',
+        )
+        .get()?.total ?? 0
+    );
+  }
+
   arquivosDeFalhas(): string[] {
     return this.db
       .prepare<[], { caminho: string }>('SELECT caminho FROM falhas_arquivos ORDER BY caminho')
@@ -604,8 +614,9 @@ export class IndiceSqlite implements ConsultaIndice, GravadorIndice {
     return removidas;
   }
 
-  removerForaDoEscopo(pathspecs: readonly string[]): number {
+  removerForaDoEscopo(pathspecs: readonly string[], falhasPermitidas: readonly string[] = []): number {
     const normas = condicaoDoEscopo(pathspecs, 'caminho');
+    const falhas = condicaoDoEscopo([...pathspecs, ...falhasPermitidas], 'caminho');
     const ids = this.db
       .prepare<Parametro[], { id: number }>(`SELECT id FROM normas WHERE NOT (${normas.sql})`)
       .all(...normas.parametros)
@@ -619,7 +630,7 @@ export class IndiceSqlite implements ConsultaIndice, GravadorIndice {
         apagar.run(id);
       }
       this.db.prepare<Parametro[]>(`DELETE FROM autoria WHERE NOT (${autoria.sql})`).run(...autoria.parametros);
-      this.db.prepare<Parametro[]>(`DELETE FROM falhas_arquivos WHERE NOT (${normas.sql})`).run(...normas.parametros);
+      this.db.prepare<Parametro[]>(`DELETE FROM falhas_arquivos WHERE NOT (${falhas.sql})`).run(...falhas.parametros);
     })();
     return ids.length;
   }
@@ -655,6 +666,12 @@ export class IndiceSqlite implements ConsultaIndice, GravadorIndice {
            AND NOT EXISTS (SELECT 1 FROM normas n WHERE n.caminho = autoria.caminho)
            AND (SELECT count(*) FROM normas n WHERE n.fonte = autoria.fonte) = 1`,
       )
+      .run().changes;
+  }
+
+  podarSignatarios(): number {
+    return this.db
+      .prepare('DELETE FROM signatarios WHERE NOT EXISTS (SELECT 1 FROM autoria a WHERE a.signatario_id = signatarios.id)')
       .run().changes;
   }
 
@@ -712,7 +729,7 @@ export function abrirIndiceLeitura(arquivo: string): IndiceSqlite {
     throw new ErroLeis(
       'indice_ausente',
       `O índice não existe em ${arquivo}.`,
-      'Rode `npx leis-mcp sync` para clonar o acervo e criar o índice.',
+      'Rode o comando sync do leis-mcp para clonar o acervo e criar o índice.',
     );
   }
   const db = new Database(arquivo, { readonly: true, fileMustExist: true });
@@ -723,7 +740,7 @@ export function abrirIndiceLeitura(arquivo: string): IndiceSqlite {
     throw new ErroLeis(
       'indice_desatualizado',
       `O índice tem a versão ${versao} do esquema; esta versão do leis-mcp usa a ${VERSAO_ESQUEMA}.`,
-      'Rode `npx leis-mcp sync` para refazer o índice.',
+      'Rode o comando sync do leis-mcp para refazer o índice.',
     );
   }
   return indice;

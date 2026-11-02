@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AcervoLocal } from '../src/adaptadores/acervo-local.js';
-import type { BuscaTextual } from '../src/core/portas.js';
+import type { Acervo, BuscaTextual } from '../src/core/portas.js';
 import { AVISO_AUSENCIA, ServicoLeis, pastasDaBuscaTextual } from '../src/core/servico.js';
 import {
   AUTORIAS_DE_TESTE,
@@ -116,8 +116,8 @@ describe('serviço de consulta', () => {
       const caminho = 'estaduais/SP/leis-ordinarias/1990/lei-8078-1990-12-01-id900001.md';
       const chamadas: string[][] = [];
       const busca: BuscaTextual = {
-        arquivos: async ({ pastas }) => {
-          chamadas.push([...pastas]);
+        arquivos: async ({ alvos }) => {
+          chamadas.push([...alvos]);
           return { caminhos: [caminho], parcial: true };
         },
         trechos: async () => [{ caminho, linha: 3, trecho: 'texto achado' }],
@@ -252,6 +252,60 @@ describe('serviço de consulta', () => {
 
     it('recusa recurso fora do acervo', async () => {
       await expect(servicoDasFixtures(teste.indice).lerRecurso('../segredo.md')).rejects.toMatchObject({ codigo: 'caminho_invalido' });
+    });
+  });
+
+  describe('achados da revisão', () => {
+    const SP_1880 = 'estaduais/SP/leis-ordinarias/1880/lei-1-1880-02-25-id137931.md';
+
+    it('lê um artigo que só existe no tachado quando incluir_tachado é true', async () => {
+      const acervo: Acervo = {
+        ler: async () => '---\ntitulo: "Lei de teste"\n---\n\nArt. 1º Texto vigente.\n\n~~Art. 2º Texto revogado.~~\n',
+        lerRaiz: async () => null,
+        lerFalhas: async () => null,
+      };
+      const busca: BuscaTextual = { arquivos: async () => ({ caminhos: [], parcial: false }), trechos: async () => [] };
+      const servico = new ServicoLeis({ indice: () => teste.indice, acervo, buscaTextual: busca });
+      await expect(servico.obter({ referencia: CAMINHO_CDC, artigo: '2' })).rejects.toMatchObject({
+        codigo: 'dispositivo_nao_encontrado',
+        proximoPasso: expect.stringContaining('incluir_tachado=true'),
+      });
+      const lido = await servico.obter({ referencia: CAMINHO_CDC, artigo: '2', incluir_tachado: true });
+      expect(texto(objeto(lido['dispositivo'])['texto'])).toContain('Texto revogado');
+      expect(lido['avisos']).toEqual(expect.arrayContaining([expect.stringContaining('redação tachada')]));
+    });
+
+    it('avisa quando uma citação sem esfera resolve para norma que não é federal', async () => {
+      const resposta = await servicoDasFixtures(teste.indice).obter({ referencia: 'Lei 1/1880' });
+      expect(objeto(resposta['norma'])['caminho']).toBe(SP_1880);
+      expect(resposta['avisos']).toEqual(expect.arrayContaining([expect.stringContaining('não diz a esfera')]));
+    });
+
+    it('aceita o municipio no formato da faceta, "UF/municipio"', async () => {
+      const servico = servicoDasFixtures(teste.indice);
+      const resposta = await servico.buscar({ municipio: 'SP/campinas' });
+      expect(lista(resposta['itens']).map((item) => item['caminho'])).toEqual([
+        'municipais/SP/campinas/leis-ordinarias/1956/leis-ordinarias-1581-1956-sapl-15126.md',
+      ]);
+      await expect(servico.buscar({ municipio: 'SP/campinas', uf: 'RJ' })).rejects.toMatchObject({ codigo: 'entrada_invalida' });
+    });
+
+    it('facetas sem resultado informam a cobertura, e a autoria ausente informa a cobertura da autoria', async () => {
+      const servico = servicoDasFixtures(teste.indice);
+      const facetas = await servico.facetas({ esfera: 'estaduais', uf: 'AC' });
+      expect(facetas['total']).toBe(0);
+      expect(texto(facetas['mensagem'])).toContain(AVISO_AUSENCIA);
+      expect(objeto(facetas['cobertura'])).toMatchObject({ recorte: 'estaduais/AC' });
+      const autoria = await servico.autoria({ referencia: 'estaduais/RS/leis-ordinarias/1950/lei-1-1950-id1.md' });
+      expect(autoria['autoria']).toBeNull();
+      expect(objeto(autoria['cobertura_autoria'])['normas_com_autoria']).toBeGreaterThan(0);
+    });
+
+    it('o recurso respeita o orçamento de tokens e aponta o cursor de leis_obter', async () => {
+      const lido = await servicoDasFixtures(teste.indice, 500).lerRecurso(CAMINHO_CDC);
+      expect(lido.length).toBeLessThan(2_400);
+      expect(lido).toContain('[Texto truncado');
+      expect(lido).toContain('leis_obter');
     });
   });
 });

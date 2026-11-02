@@ -60,7 +60,7 @@ export function resultadoDeErro(erro: unknown): CallToolResult {
         erro: {
           codigo: 'interno',
           mensagem: mensagemDe(erro),
-          proximo_passo: 'Tente de novo. Se o erro continuar, rode `npx leis-mcp status` e leia o log em stderr.',
+          proximo_passo: 'Tente de novo. Se o erro continuar, rode o comando status do leis-mcp e leia o log em stderr.',
           sugestoes: [],
         },
       };
