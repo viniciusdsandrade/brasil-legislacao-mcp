@@ -1,0 +1,13 @@
+# Add this table to ~/.codex/config.toml (all projects)
+# or to .codex/config.toml in a trusted project.
+
+[mcp_servers.leis]
+command = "npx"
+args = ["-y", "https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.1.0/leis-mcp-0.1.0.tgz", "serve"]
+env = { LEIS_ESCOPO = "constituicao,federal" }
+# The first npx run can take one minute. The default is 10 seconds.
+startup_timeout_sec = 120
+
+# HTTP server instead of stdio (start it with "npx -y <SPEC> http"):
+# [mcp_servers.leis]
+# url = "http://127.0.0.1:3920/mcp"

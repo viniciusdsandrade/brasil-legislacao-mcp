@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "leis": {
+      "type": "local",
+      "command": ["npx", "-y", "https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.1.0/leis-mcp-0.1.0.tgz", "serve"],
+      "environment": {
+        "LEIS_ESCOPO": "constituicao,federal"
+      },
+      "timeout": 120000
+    }
+  }
+}

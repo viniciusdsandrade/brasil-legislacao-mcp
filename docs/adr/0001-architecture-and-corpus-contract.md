@@ -129,6 +129,10 @@ Only 4.5% of the sampled `municipais` files have `ementa`. When the header has n
 
 `ocr` is true when one of the three OCR signals is present. `sem_texto` is true for the notice of missing text, or when the body has no text after the title. `leis_obter` removes struck text by default and tells how many parts it removed. The parameter `incluir_tachado` shows them.
 
+A pair of `~~` marks is valid only in one paragraph. OCR files can have a single `~~` that is noise. When a paragraph has an odd number of marks, the parser removes nothing in that paragraph, because it cannot find the pairs. Thus OCR noise does not delete real text.
+
+Some provisions are only in struck text, because they are revoked or changed. When the clean text does not have the provision, `leis_obter` looks in the struck text. Without `incluir_tachado`, the error tells you to set it. With `incluir_tachado`, the result has the struck text and a notice.
+
 ### D10. Provisions
 
 The parser finds articles (`Art.`, `Artigo`), paragraphs (`§`, `Parágrafo único`), items (Roman numerals) and letters (`a)`). It accepts the OCR forms `Art. 1o` and `Art. l97`. It ignores lines that start with a quotation mark, because they quote the text of another law. When the article numbers start again in one file (Constitution and ADCT), the parser makes a new block. The parameter `bloco` selects a block. The citation `ADCT art. 10` selects the transitory block.
@@ -142,12 +146,12 @@ The parser finds articles (`Art.`, `Artigo`), paragraphs (`§`, `Parágrafo úni
 The tools are `leis_buscar`, `leis_obter`, `leis_facetas`, `leis_cobertura` and `leis_autoria`. All have `readOnlyHint` and `idempotentHint`. The analysis gave these changes to the first contract:
 
 1. `leis_buscar` has the parameter `alcance` (`cabecalho` or `texto`). `cabecalho` searches the title and the summary. `texto` searches the body.
-2. `leis_obter` has the parameters `bloco`, `esfera` and `uf`, because a number and a year are not unique across spheres. Without a sphere, a citation prefers the federal norm and tells about the other matches.
+2. `leis_obter` has the parameters `bloco`, `esfera` and `uf`, because a number and a year are not unique across spheres. Without a sphere, a citation prefers the federal norm and tells about the other matches. When the result is from another sphere, the result has a notice. The notice also tells when the federal sphere is not in the local scope.
 3. The items have `ementa_derivada` (D8).
 4. `leis_cobertura` reads the `_falhas.jsonl` files that the sync records.
 5. `leis_autoria` links moved files by `fonte` (D11).
 
-Each result has `structuredContent` and a text block with the same JSON. A result without items tells the coverage of the slice, because absence in the corpus does not prove that a norm does not exist. Each error tells the next step. `LEIS_ORCAMENTO_TOKENS` sets the token budget. A larger result is cut and gets a cursor.
+Each result has `structuredContent` and a text block with the same JSON. A result without items tells the coverage of the slice, because absence in the corpus does not prove that a norm does not exist. This is also true for `leis_facetas`. A norm without authorship tells how many norms of the index have authorship. Each error tells the next step. `LEIS_ORCAMENTO_TOKENS` sets the token budget. A larger list is cut and gets a cursor. Candidates, facets and coverage are cut and get `truncado: true`. The resource text is cut with a notice that tells the client to use `leis_obter` and its cursor.
 
 We do not declare an `outputSchema`. The structured content is still present, and some clients reject a result that does not match a declared schema.
 
@@ -162,16 +166,37 @@ The template is `leis://{caminho}`. In RFC 6570, the simple expansion `{caminho}
 ### D15. Security
 
 1. A path must be relative, end in `.md`, have no `.` or `..` segment, have no segment that starts with `_` or `.`, and stay in the clone after symbolic links.
+4. `leis-mcp http` listens only on `127.0.0.1`, `::1` or `localhost`. It checks the `Host` and `Origin` headers before the SDK, against DNS rebinding. It has no authentication.
 2. Subprocesses start with an argument list and without a shell. ripgrep gets `--no-config` and never gets `--pre`. The pattern comes after `--`. git gets the scope through `--stdin` or after `--`.
 3. A user term goes into FTS5 only as a quoted string. The service removes operators, column filters and parentheses.
 
 ### D16. Logs and configuration
 
-Logs go to stderr only. The configuration comes from environment variables: `LEIS_REMOTO`, `LEIS_RAMO`, `LEIS_CLONE`, `LEIS_INDICE`, `LEIS_ESCOPO`, `LEIS_CORPO`, `LEIS_ORCAMENTO_TOKENS`, `LEIS_RG`, `LEIS_GIT` and `LEIS_LOG`.
+Logs go to stderr only. The configuration comes from environment variables: `LEIS_REMOTO`, `LEIS_RAMO`, `LEIS_CLONE`, `LEIS_INDICE`, `LEIS_ESCOPO`, `LEIS_CORPO`, `LEIS_ORCAMENTO_TOKENS`, `LEIS_RG`, `LEIS_GIT`, `LEIS_LOG`, `LEIS_HTTP_HOST` and `LEIS_HTTP_PORTA`. `LEIS_CORPO` is limited to the scope: `LEIS_CORPO=estaduais` with `LEIS_ESCOPO=estaduais/SP` indexes the body of `estaduais/SP`.
+
+### D17. Search rules
+
+`leis_buscar` reads the same terms for FTS5 and for ripgrep: words, phrases in quotation marks and prefixes (`word*`, 3 letters or more). A norm must have all the terms. For ripgrep, each term is one pattern that matches a full word and ignores accents. The first pattern reads the targets, and each next pattern reads only the files that are left. Thus the two engines give the same kind of result.
+
+### D18. Courts in `outros-tribunais`
+
+The corpus keeps TCU (292 files) and STM (17 files) in `jurisprudencia/outros-tribunais/<court>/`, without a kind folder. The path parser gives the court from the third segment. The slice of `tribunal=tcu` is `jurisprudencia/outros-tribunais/tcu`. The index schema has version 2 for this change, so an index of version 1 is made again.
+
+### D19. Failure files above the scope
+
+The cone mode of the sparse checkout also brings the files of the parent folders. When the scope has `estaduais/SP/leis-ordinarias`, the sync records `estaduais/SP/_falhas.jsonl` and `estaduais/_falhas.jsonl` when they exist. Thus `leis_cobertura` shows the failures that apply to the slice.
+
+### D20. Streamable HTTP transport
+
+`leis-mcp http` uses `createMcpHandler` of `@modelcontextprotocol/server` and `toNodeHandler` of `@modelcontextprotocol/node`. Each request gets a new MCP server instance on the same service and index. The endpoint is `/mcp`. The default address is `127.0.0.1:3920`.
+
+### D21. Distribution
+
+A tag `vX.Y.Z` starts a release workflow. It runs the tests, runs `npm pack`, starts the package with `npx` and attaches the package to a GitHub release. Clients start the package with `npx -y <release URL> serve`. We did not publish to the npm registry: the registry shows the email of the npm account in the package metadata, and the owner of the account must decide this. When the secret `NPM_TOKEN` exists, the same workflow publishes to the registry with provenance.
 
 ## Consequences
 
-1. A new harness needs only a folder in `clients/`.
+1. A new harness needs only a folder in `clients/`. The folder has guides for Claude Code, Codex, Grok, Antigravity and the GLM clients.
 2. The first sync of the default scope downloads the history and the federal files. Later syncs read only the changes.
 3. Body search without `LEIS_CORPO` needs ripgrep on the computer.
 4. The index does not prove that a norm is in force. The result always gives `fonte`, `versao_texto`, `baixado_em` and the notices of the source.

@@ -160,9 +160,15 @@ After the ports in `src/core/portas.ts` are stable, three agents can do WP3, WP4
 | Argument lists and `--` for user terms | `src/adaptadores/ripgrep.ts`, `src/adaptadores/git.ts` | `test/seguranca.test.ts` |
 | Safe FTS5 query | `src/core/consulta-fts.ts` | `test/seguranca.test.ts` |
 | Claude Code installation | `clients/claude-code/` | review |
+| Streamable HTTP transport, local only | `src/adaptadores/mcp/http.ts` | `test/http.test.ts` |
+| Distribution with `npx` | `.github/workflows/release.yml` | CI pack and `npx` check |
+| Other harnesses without changes to the core | `clients/` | review |
 
-## 6. Later work
+## 6. Status
 
-- Streamable HTTP adapter with `@modelcontextprotocol/node`.
-- Client folders for Codex, Grok, Antigravity and GLM.
-- Release to npm, so that `npx leis-mcp` works without a clone of this repository.
+All work packages are done. The Streamable HTTP adapter, the client folders for Codex, Grok, Antigravity and GLM, and the release workflow are done. ADR 0001 (D17 to D21) has the decisions.
+
+## 7. Later work
+
+- Publish to the npm registry. The owner of the npm account must add the secret `NPM_TOKEN` (ADR 0001, D21).
+- Run a sync of the full corpus and record the time and the size of the index.

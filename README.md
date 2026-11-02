@@ -15,7 +15,7 @@ leis-mcp is an MCP server for the Brazilian legislation corpus [viniciusdsandrad
 
 ## Status
 
-Version 0.1.0. The package is not on npm yet. Use it from the source code (see [Install](#install)). After the release, `npx -y leis-mcp` starts it.
+Version 0.1.0. Get it with `npx` from the GitHub release (see [Install](#install)). The package is not in the npm registry.
 
 ## Requirements
 
@@ -25,21 +25,22 @@ Version 0.1.0. The package is not on npm yet. Use it from the source code (see [
 
 ## Install
 
-```sh
-git clone https://github.com/viniciusdsandrade/brasil-legislacao-mcp
-cd brasil-legislacao-mcp
-npm ci
-npm run build
-node dist/cli.js sync
-```
+1. Run the first sync. It clones the corpus and makes the index:
 
-Then connect your MCP client. For Claude Code, see [clients/claude-code](clients/claude-code/README.md).
+   ```sh
+   LEIS_ESCOPO=constituicao,federal npx -y https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.1.0/leis-mcp-0.1.0.tgz sync
+   ```
+
+2. Connect your MCP client. The folder [clients](clients/README.md) has a guide for Claude Code, Codex, Grok, Antigravity and the GLM clients.
+
+To use the source code, clone this repository and run `npm ci`. The `prepare` script builds `dist`. Then use `node dist/cli.js` in place of `npx -y <package>`.
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
 | `leis-mcp` or `leis-mcp serve` | Starts the MCP server on stdio. |
+| `leis-mcp http` | Starts the MCP server on Streamable HTTP at `http://127.0.0.1:3920/mcp`. One server can serve all clients. |
 | `leis-mcp sync` | Clones or updates the corpus and the index. It writes a JSON report to stdout. |
 | `leis-mcp status` | Shows the state of the index. |
 | `leis-mcp --version` | Shows the version. |
@@ -74,6 +75,8 @@ Use environment variables. Use the same values for `sync` and for the server.
 | `LEIS_RG` | `rg` | ripgrep program. |
 | `LEIS_GIT` | `git` | git program. |
 | `LEIS_LOG` | `info` | Log level: `erro`, `aviso`, `info` or `depuracao`. The log goes to stderr. |
+| `LEIS_HTTP_HOST` | `127.0.0.1` | Address of `leis-mcp http`: `127.0.0.1`, `::1` or `localhost`. Other addresses are refused. |
+| `LEIS_HTTP_PORTA` | `3920` | Port of `leis-mcp http`. |
 
 When `XDG_CACHE_HOME` is set, the cache folder is `$XDG_CACHE_HOME/leis-mcp`.
 
@@ -88,6 +91,16 @@ All tools have the hints `readOnlyHint` and `idempotentHint`.
 | `leis_facetas` | Count norms. | `dimensoes` (`esfera`, `tipo`, `uf`, `orgao`, `tribunal`, `municipio`, `decada`), `texto`, the filters, `limite` |
 | `leis_cobertura` | Show the gaps of a slice and the state of the index. | `esfera`, `uf`, `municipio`, `orgao`, `tribunal`, `tipo` |
 | `leis_autoria` | Show the signatories of a norm, or the norms of a signatory. | `referencia` or `signatario`, `limite`, `cursor`, `formato` |
+
+Search rules of `texto`:
+
+- The norm must have all the words. A word matches only a full word: `consumo` does not match `consumidor`.
+- Put a phrase in quotation marks: `"defesa do consumidor"`.
+- Put `*` after a word of 3 letters or more to search the start of words: `consum*`.
+- Accents and case have no effect.
+- The FTS5 index and ripgrep use the same rules.
+
+`municipio` accepts the city slug (`campinas`) or the form `SP/campinas` that `leis_facetas` returns.
 
 Examples of citations for `referencia`:
 
@@ -104,11 +117,12 @@ The server also has the resource template `leis://{caminho}`. The path is encode
 
 - Items are compact: `caminho`, `titulo`, `tipo`, `numero`, `data`, `uf`, a short `ementa`, `situacao`, `fonte`, `versao_texto`, `baixado_em` and `ocr`. Use `formato: completo` to get all fields and the URI.
 - Each result has `fonte`, `versao_texto` and `baixado_em`. OCR text has `ocr: true` and a notice.
-- `leis_obter` removes struck text by default and tells how many parts it removed. Use `incluir_tachado: true` to see them.
+- `leis_obter` removes struck text by default and tells how many parts it removed. Use `incluir_tachado: true` to see them. A provision that is only in struck text (revoked or changed) is available only with `incluir_tachado: true`, with a notice.
+- A citation without a sphere prefers the federal norm. When the result is from another sphere, the result has a notice.
 - A result without items tells the coverage of the slice. Absence in the local corpus does not prove that a norm does not exist.
 - Each result has `structuredContent` and a text block with the same JSON.
 - Each error has a code, a message and the next step.
-- A result that is larger than the token budget is cut. Use the `cursor` of the result to get the next page.
+- A result that is larger than the token budget is cut. Use the `cursor` of the result to get the next page. Candidates, facets and coverage are cut and have `truncado: true`. The resource `leis://{caminho}` is cut with a notice that tells you to use `leis_obter` and its cursor.
 
 ## Safety
 
@@ -116,13 +130,14 @@ The server also has the resource template `leis://{caminho}`. The path is encode
 - Subprocesses start with an argument list and without a shell. User terms come after `--`. ripgrep runs with `--no-config` and never with `--pre`.
 - User text goes into FTS5 only as quoted strings. Operators, column filters and parentheses become plain text.
 - The server opens the index read-only. Only `sync` writes to the index and the clone.
+- `leis-mcp http` listens only on a local address. It checks the `Host` and `Origin` headers against DNS rebinding. It has no authentication. Do not expose it to a network.
 
 ## Architecture
 
 ```
 src/core/          Domain rules, use cases and ports. No MCP code and no I/O.
 src/adaptadores/   Adapters for SQLite FTS5, git, ripgrep, the file system and MCP.
-src/cli.ts         Composition root: serve, sync and status.
+src/cli.ts         Composition root: serve, http, sync and status.
 clients/           Installation files for each MCP client.
 test/              vitest tests with small fixtures.
 ```
@@ -137,6 +152,8 @@ npm run typecheck
 npm test
 npm run build
 ```
+
+A tag `vX.Y.Z` starts the release workflow. It runs the tests, packs the package, checks it with `npx` and attaches it to a GitHub release. When the secret `NPM_TOKEN` exists, the workflow also publishes to the npm registry with provenance.
 
 The GitHub Actions workflow runs these steps on Node 22 and Node 24.
 
