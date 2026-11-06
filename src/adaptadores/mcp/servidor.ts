@@ -24,7 +24,7 @@ export const INSTRUCOES = [
   'Fluxo: 1) leis_buscar acha normas por palavras e filtros (esfera, uf, municipio, orgao, tribunal, tipo, numero, datas, revogada); alcance=texto busca no corpo.',
   '2) leis_obter lê a norma ou um dispositivo (artigo, paragrafo, inciso, alinea). Aceita caminho, URN ou citação como "Lei 8.078/1990", "CF art. 5º, XI" ou "ADCT art. 10".',
   '3) Cite sempre o campo fonte e repasse os avisos: OCR, revogação ou falta de vigor, integralidade pendente, texto não compilado e tachado omitido.',
-  'Os campos revogada e vigencia_na_fonte dizem o que a fonte oficial informa sobre a vigência; sem eles, a vigência é desconhecida. O campo integralidade: "pendente" quer dizer que o texto ainda não foi validado como completo: pode faltar um anexo ou suplemento.',
+  'Os campos situacao, revogada e vigencia_na_fonte dizem o que a fonte oficial informa sobre a vigência; sem eles, a vigência é desconhecida. O campo integralidade: "pendente" quer dizer que o texto ainda não foi validado como completo: pode faltar um anexo ou suplemento.',
   'Resultado vazio não prova que a norma não existe: use leis_cobertura para ver o recorte do acervo local.',
   'leis_facetas conta normas por tipo, UF, órgão, tribunal, município e década. leis_autoria mostra os signatários da base inicial do histórico.',
   'O texto é informativo e não substitui a publicação no Diário Oficial.',
