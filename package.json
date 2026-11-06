@@ -1,6 +1,6 @@
 {
   "name": "leis-mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "MCP server to search, read and cite the Brazilian legislation corpus viniciusdsandrade/leis from a local, read-only clone.",
   "keywords": [
     "mcp",

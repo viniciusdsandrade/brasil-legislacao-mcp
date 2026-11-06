@@ -17,7 +17,7 @@ leis-mcp is an MCP server for the Brazilian legislation corpus [viniciusdsandrad
 
 ## Status
 
-Version 0.2.0. Get it with `npx` from the GitHub release (see [Install](#install)). The package is not in the npm registry.
+Version 0.2.1. Get it with `npx` from the GitHub release (see [Install](#install)). The package is not in the npm registry.
 
 ## Requirements
 
@@ -30,7 +30,7 @@ Version 0.2.0. Get it with `npx` from the GitHub release (see [Install](#install
 1. Run the first sync. It clones the corpus and makes the index:
 
    ```sh
-   LEIS_ESCOPO=constituicao,federal npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.2.0/leis-mcp-0.2.0.tgz sync
+   LEIS_ESCOPO=constituicao,federal npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.2.1/leis-mcp-0.2.1.tgz sync
    ```
 
    The option `--allow-remote=all` lets npm install the package from the release URL. Since npm 12, npm refuses a package from a URL without this option, with the error `EALLOWREMOTE`. npm 10 and npm 11 also accept the option.

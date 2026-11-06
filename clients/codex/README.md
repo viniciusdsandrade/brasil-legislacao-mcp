@@ -6,7 +6,7 @@
 2. Add the server with the command line:
 
    ```sh
-   codex mcp add leis --env LEIS_ESCOPO=constituicao,federal -- npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.2.0/leis-mcp-0.2.0.tgz serve
+   codex mcp add leis --env LEIS_ESCOPO=constituicao,federal -- npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.2.1/leis-mcp-0.2.1.tgz serve
    ```
 
    Or copy the table of [config.toml](config.toml) to `~/.codex/config.toml`. The file also sets `startup_timeout_sec = 120`, because the first `npx` run is slow. The command line does not set it.

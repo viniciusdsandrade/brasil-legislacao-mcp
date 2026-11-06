@@ -22,7 +22,7 @@ Add this entry to the `mcp` object of `~/.config/crush/crush.json`:
 "leis": {
   "type": "stdio",
   "command": "npx",
-  "args": ["-y", "--allow-remote=all", "https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.2.0/leis-mcp-0.2.0.tgz", "serve"],
+  "args": ["-y", "--allow-remote=all", "https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.2.1/leis-mcp-0.2.1.tgz", "serve"],
   "env": { "LEIS_ESCOPO": "constituicao,federal" }
 }
 ```
