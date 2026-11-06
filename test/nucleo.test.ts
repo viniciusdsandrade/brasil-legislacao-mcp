@@ -406,6 +406,46 @@ describe('dispositivos', () => {
     expect(estrutura.artigos.map((artigo) => artigo.chave)).toEqual(['1', '197', '2', '4-A', '5', '6']);
   });
 
+  it('lê o rótulo com a ênfase do Markdown só em parte dele', () => {
+    // Formas dos lotes do acervo com fidelidade de renderização: decretos federais reextraídos e decretos de São Paulo.
+    const estrutura = estruturar([
+      '**Art**. 1º Ficam remanejados os seguintes cargos:',
+      '**I** – da Secretaria de Gestão para o Gabinete do Ministro;',
+      '*a)* um DAS 101.4;',
+      '**§** 1º Os cargos não integrarão a Estrutura Regimental.',
+      '**§ 2º** Findo o prazo, os cargos serão restituídos.',
+      '**Art**.111. Na Tesouraria haverá um Guarda-livros.',
+      '**Art.** 4ª As tabellas de soldo ficam aprovadas.',
+      '**Art** 69. Aos pescadores é permitido o uso de redes.',
+      '**Artigo** 7º Nenhum navio mercante poderá partir.',
+      '**Ar**t. 8º Para verificação dos limites de tolerância.',
+      '**Art.** *17. O* jornaleiro que se invalidar terá pensão.',
+      'Art. **3º** O registro cadastral conterá os dados.',
+      '**Art**. **2**º Ficam suprimidos oito cargos.',
+      '**Art. 3**7. Em caso de transporte regular, a ferrovia baixará instruções.',
+    ]);
+    expect(estrutura.artigos.map((artigo) => artigo.chave)).toEqual(['1', '111', '4', '69', '7', '8', '17', '3', '2', '37']);
+    expect(estrutura.artigos[0]?.unidades.map((unidade) => `${unidade.nivel}:${unidade.chave}`)).toEqual(['2:I', '3:a', '1:1', '1:2']);
+    // O texto devolvido mantém a marcação original.
+    const paragrafo = localizarDispositivo(estrutura, { artigo: '1', paragrafo: '1' });
+    expect(textoDe(estrutura, paragrafo.inicio, paragrafo.fim)).toBe('**§** 1º Os cargos não integrarão a Estrutura Regimental.');
+  });
+
+  it('depois de um espaço, só lê a letra como sufixo do número quando há pontuação depois dela', () => {
+    const estrutura = estruturar([
+      '**Art. 4º** -B. As fundações de apoio poderão conceder bolsas.',
+      '**Art. 19** -C. Caberá à União financiar o subsistema.',
+      // O travessão abre a frase, e "O" ou "A" é o artigo definido.
+      '**Artigo 2º** -O crédito aberto pelo artigo anterior será coberto.',
+      '**Artigo 5°** -A loteadora deverá cumprir o cronograma.',
+      '**Artigo 1º.** -O presente Acordo tem por objetivo incorporar as concessões.',
+      '**§ 1º** -O prazo é de dez dias.',
+      'Art. 6º-A A lei estabelecerá os critérios.',
+    ]);
+    expect(estrutura.artigos.map((artigo) => artigo.chave)).toEqual(['4-B', '19-C', '2', '5', '1', '6-A']);
+    expect(estrutura.artigos[4]?.unidades.map((unidade) => unidade.chave)).toEqual(['1']);
+  });
+
   it('pagina por unidade e continua do ponto do corte', () => {
     const primeira = paginar(['aaaa', 'bbbb', 'cccc'], { unidade: 0, deslocamento: 0 }, 10);
     expect(primeira.texto).toBe('aaaa\n\nbbbb');

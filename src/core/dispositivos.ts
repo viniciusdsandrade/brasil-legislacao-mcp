@@ -46,28 +46,53 @@ interface Faixa {
 
 const MARCAS_INICIAIS = /^[\s>*_]+/;
 const ASPAS_INICIAIS = /^[“"'‘«]/;
+/**
+ * O rótulo ("Art. 1º", "§ 2º", "IV –", "a)") fica no começo da linha. Os lotes do acervo com
+ * fidelidade de renderização põem a ênfase do Markdown só em parte dele: "**Art**. 1º",
+ * "**Art.** 4º", "Art. **3º**", "**§** 2º", "**I** –".
+ */
+const ZONA_DO_ROTULO = 24;
+const ENFASE = /[*_]+/g;
 const TITULO_MARKDOWN = /^(#{1,6})\s+(.*)$/;
 const FIM_DE_TEXTO = /^(?:Bras[íi]lia|Rio de Janeiro|Pal[áa]cio|Pa[çc]o|Sala das Sess[õo]es|Gabinete d[oa])\b/;
+// Grupos: 1 número, 2 o que fica entre o número e o sufixo (ordinal, ponto, espaços), 3 sufixo ("-A").
 const ARTIGO =
-  /^Art(?:igo)?\s*\.?\s*((?:l(?=\d))?\d{1,4}(?:\.\d{3})*)\s*(?:[º°ª]|o(?!\p{L}))?\s*\.?\s*((?:-[A-Z](?!\p{L}))*)/u;
+  /^Art(?:igo)?\s*\.?\s*((?:l(?=\d))?\d{1,4}(?:\.\d{3})*)(\s*(?:[º°ª]|o(?!\p{L}))?\s*\.?\s*)((?:-[A-Z](?!\p{L}))*)/u;
 const ARTIGO_UNICO = /^Artigo\s+[úÚuU]nico\b/;
+// Grupos: 1 número, 2 o que fica entre o número e o sufixo, 3 sufixo, 4 parágrafo único.
 const PARAGRAFO =
-  /^(?:§\s*(\d{1,3})\s*(?:[º°ª]|o(?!\p{L}))?\s*\.?\s*((?:-[A-Z](?!\p{L}))*)|([Pp]ar[áa]grafo\s+[úÚuU]nico|PAR[ÁA]GRAFO\s+[ÚU]NICO))/u;
+  /^(?:§\s*(\d{1,3})(\s*(?:[º°ª]|o(?!\p{L}))?\s*\.?\s*)((?:-[A-Z](?!\p{L}))*)|([Pp]ar[áa]grafo\s+[úÚuU]nico|PAR[ÁA]GRAFO\s+[ÚU]NICO))/u;
+/** O que pode vir depois de um sufixo separado do número por espaço: "Art. 4º -B. As fundações". */
+const DEPOIS_DO_SUFIXO = /^\s*(?:[.:–—-]|$)/;
 const INCISO = /^([IVXLCDM]+)((?:-[A-Z])*)\s*[-–—]\s*/;
 const ALINEA = /^([a-z])\)\s*/;
 
 const NOMES_NIVEL: Record<Nivel, string> = { 1: 'parágrafo', 2: 'inciso', 3: 'alínea' };
 
-/** Tira as marcas iniciais da linha. Linha citada entre aspas vira null: é texto de outra norma. */
+/**
+ * Tira as marcas iniciais da linha e a ênfase que fica dentro do rótulo. Serve só para achar o
+ * dispositivo: o texto devolvido ao usuário não muda. Linha citada entre aspas vira null: é
+ * texto de outra norma.
+ */
 function prepararLinha(linha: string): string | null {
   const semMarcas = linha.replace(MARCAS_INICIAIS, '');
   if (semMarcas === '' || ASPAS_INICIAIS.test(semMarcas)) return null;
-  return semMarcas;
+  return semMarcas.slice(0, ZONA_DO_ROTULO).replace(ENFASE, '') + semMarcas.slice(ZONA_DO_ROTULO);
 }
 
 function chaveNumerica(numero: string, sufixo: string): string {
   const valor = Number.parseInt(numero.replace(/^l/, '1').replace(/\./g, ''), 10);
   return `${Number.isNaN(valor) ? numero : String(valor)}${sufixo.replace(/\s+/g, '').toUpperCase()}`;
+}
+
+/**
+ * Sufixo do número ("-A" em "Art. 4º-A"). Quando um espaço separa o número do hífen, a letra só
+ * é sufixo se vier seguida de pontuação ("Art. 4º -B. As fundações"). Em "Artigo 2º -O crédito
+ * aberto", o travessão abre a frase e "O" é o artigo definido.
+ */
+function sufixoDoNumero(linha: string, encontrado: RegExpExecArray, separador: string, sufixo: string): string {
+  if (sufixo === '' || !/\s/.test(separador)) return sufixo;
+  return DEPOIS_DO_SUFIXO.test(linha.slice(encontrado[0].length)) ? sufixo : '';
 }
 
 /** Chave do artigo que abre a linha ("5", "4-A", "1000", "unico"), ou null. */
@@ -77,7 +102,7 @@ export function chaveDeRotuloDeArtigo(linha: string): string | null {
   if (ARTIGO_UNICO.test(preparada)) return 'unico';
   const encontrado = ARTIGO.exec(preparada);
   if (!encontrado) return null;
-  return chaveNumerica(encontrado[1] ?? '', encontrado[2] ?? '');
+  return chaveNumerica(encontrado[1] ?? '', sufixoDoNumero(preparada, encontrado, encontrado[2] ?? '', encontrado[3] ?? ''));
 }
 
 function unidadeDaLinha(linha: string, indice: number): Unidade | null {
@@ -85,7 +110,9 @@ function unidadeDaLinha(linha: string, indice: number): Unidade | null {
   if (preparada === null) return null;
   const paragrafo = PARAGRAFO.exec(preparada);
   if (paragrafo) {
-    const chave = paragrafo[3] ? 'unico' : chaveNumerica(paragrafo[1] ?? '', paragrafo[2] ?? '');
+    const chave = paragrafo[4]
+      ? 'unico'
+      : chaveNumerica(paragrafo[1] ?? '', sufixoDoNumero(preparada, paragrafo, paragrafo[2] ?? '', paragrafo[3] ?? ''));
     return { nivel: 1, chave, linha: indice };
   }
   const inciso = INCISO.exec(preparada);
