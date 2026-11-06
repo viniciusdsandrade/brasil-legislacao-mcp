@@ -5,8 +5,10 @@ import type {
   EstadoIndice,
   FiltroNormas,
   Norma,
+  Pendencia,
   RegistroAutoria,
   RegistroNorma,
+  ResumoPendencias,
 } from './tipos.js';
 
 /** Leitura do índice. O servidor só usa esta porta. */
@@ -46,6 +48,14 @@ export interface ConsultaIndice {
   arquivosDeFalhas(): string[];
   /** Normas do índice com autoria registrada. */
   contarComAutoria(): number;
+  /** Pendência de integralidade de uma norma no registro do acervo, ou null. */
+  pendenciaDe(caminho: string): Pendencia | null;
+  /** Dos caminhos dados, os que têm pendência de integralidade. */
+  caminhosComPendencia(caminhos: readonly string[]): string[];
+  /** Normas do índice com pendência de integralidade dentro de um filtro. */
+  contarPendencias(filtro: FiltroNormas): number;
+  /** Data, critério e total do registro de pendências que o sync gravou. */
+  resumoDasPendencias(): ResumoPendencias;
 }
 
 /** Escrita do índice. Só o comando sync usa esta porta. */
@@ -72,6 +82,8 @@ export interface GravadorIndice {
   caminhosSob(pathspec: string): string[];
   /** Arquivos _falhas.jsonl registrados sob um pathspec. */
   falhasSob(pathspec: string): string[];
+  /** Troca todas as pendências de integralidade pelas do registro lido. */
+  substituirPendencias(pendentes: readonly Pendencia[]): void;
   contarNormas(): number;
   otimizar(): void;
 }
@@ -132,6 +144,10 @@ export interface RepositorioGit {
   buscar(): Promise<string>;
   /** Avança o ramo local até o commit, só por fast-forward, e traz os arquivos das pastas do checkout. */
   avancar(commit: string): Promise<void>;
+  /** Identificador do conteúdo de um arquivo num commit, ou null quando o arquivo não existe. Não baixa o conteúdo. */
+  objetoDoArquivo(commit: string, caminho: string): Promise<string | null>;
+  /** Conteúdo de um objeto, mesmo fora do checkout. No clone parcial, baixa só esse objeto. */
+  lerObjeto(objeto: string): Promise<string>;
   head(): Promise<string>;
   temCommit(commit: string): Promise<boolean>;
   mudancas(de: string, ate: string, pathspecs: readonly string[]): AsyncIterable<Mudanca>;

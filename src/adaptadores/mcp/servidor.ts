@@ -23,7 +23,8 @@ export const INSTRUCOES = [
   'Acervo local da legislação brasileira (viniciusdsandrade/leis), somente leitura.',
   'Fluxo: 1) leis_buscar acha normas por palavras e filtros (esfera, uf, municipio, orgao, tribunal, tipo, numero, datas, revogada); alcance=texto busca no corpo.',
   '2) leis_obter lê a norma ou um dispositivo (artigo, paragrafo, inciso, alinea). Aceita caminho, URN ou citação como "Lei 8.078/1990", "CF art. 5º, XI" ou "ADCT art. 10".',
-  '3) Cite sempre o campo fonte e repasse os avisos: OCR, revogação, texto não compilado e tachado omitido.',
+  '3) Cite sempre o campo fonte e repasse os avisos: OCR, revogação ou falta de vigor, integralidade pendente, texto não compilado e tachado omitido.',
+  'Os campos revogada e vigencia_na_fonte dizem o que a fonte oficial informa sobre a vigência; sem eles, a vigência é desconhecida. O campo integralidade: "pendente" quer dizer que o texto ainda não foi validado como completo: pode faltar um anexo ou suplemento.',
   'Resultado vazio não prova que a norma não existe: use leis_cobertura para ver o recorte do acervo local.',
   'leis_facetas conta normas por tipo, UF, órgão, tribunal, município e década. leis_autoria mostra os signatários da base inicial do histórico.',
   'O texto é informativo e não substitui a publicação no Diário Oficial.',
@@ -100,7 +101,7 @@ export function criarServidorMcp(servico: ServicoLeis, opcoes: OpcoesServidorMcp
     {
       title: 'Buscar normas',
       description:
-        'Busca normas no acervo local por palavras e filtros. Devolve itens compactos com caminho, título, tipo, número, data, UF, ementa, situação, fonte, versao_texto, baixado_em e marca de OCR. Use o cursor para a próxima página.',
+        'Busca normas no acervo local por palavras e filtros. Devolve itens compactos com caminho, título, tipo, número, data, UF, ementa, situação, vigência segundo a fonte, fonte, versao_texto, baixado_em e marca de OCR. Marca as normas revogadas e as de integralidade pendente. Use o cursor para a próxima página.',
       inputSchema: fromJsonSchema<EntradaBuscar>(ESQUEMA_BUSCAR),
       annotations: { ...DICAS, title: 'Buscar normas' },
     },
@@ -112,7 +113,7 @@ export function criarServidorMcp(servico: ServicoLeis, opcoes: OpcoesServidorMcp
     {
       title: 'Ler norma ou dispositivo',
       description:
-        'Lê uma norma por caminho, URN ou citação, inteira (paginada por artigo) ou só um dispositivo. Omite redações tachadas por padrão e avisa. Se a citação for ambígua, devolve candidatos.',
+        'Lê uma norma por caminho, URN ou citação, inteira (paginada por artigo) ou só um dispositivo. Omite redações tachadas por padrão e avisa. Avisa também quando a fonte marca a norma como sem vigor e quando a integralidade do texto está pendente. Se a citação for ambígua, devolve candidatos.',
       inputSchema: fromJsonSchema<EntradaObter>(ESQUEMA_OBTER),
       annotations: { ...DICAS, title: 'Ler norma ou dispositivo' },
     },
@@ -135,7 +136,7 @@ export function criarServidorMcp(servico: ServicoLeis, opcoes: OpcoesServidorMcp
     {
       title: 'Cobertura do acervo',
       description:
-        'Mostra as lacunas de um recorte (COBERTURA.md, PROGRESSO.md e _falhas.jsonl) e o estado do índice local: commit, data do sync, escopo e totais.',
+        'Mostra as lacunas de um recorte (COBERTURA.md, PROGRESSO.md, _falhas.jsonl e o registro de pendências de integralidade) e o estado do índice local: commit, data do sync, escopo e totais.',
       inputSchema: fromJsonSchema<EntradaCobertura>(ESQUEMA_COBERTURA),
       annotations: { ...DICAS, title: 'Cobertura do acervo' },
     },
@@ -159,7 +160,8 @@ export function criarServidorMcp(servico: ServicoLeis, opcoes: OpcoesServidorMcp
     new ResourceTemplate('leis://{caminho}', { list: undefined }),
     {
       title: 'Norma do acervo',
-      description: 'Texto Markdown de uma norma. O caminho vai codificado, por exemplo leis://federal%2Fleis-ordinarias%2F1990%2Flei-8078-1990-09-11.md.',
+      description:
+        'Texto Markdown de uma norma. O caminho vai codificado, por exemplo leis://federal%2Fleis-ordinarias%2F1990%2Flei-8078-1990-09-11.md. O texto de uma norma com integralidade pendente termina com um aviso.',
       mimeType: 'text/markdown',
     },
     async (uri, variaveis): Promise<ReadResourceResult> => {

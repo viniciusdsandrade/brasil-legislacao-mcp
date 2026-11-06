@@ -8,17 +8,19 @@ import {
   pastasDoCheckoutDaEntrada,
   pathspecDaEntrada,
 } from './caminho.js';
-import { ErroLeis } from './erros.js';
+import { ErroLeis, mensagemDe } from './erros.js';
 import { registroDaNorma } from './indexacao.js';
+import { CAMINHO_DO_REGISTRO_DE_PENDENCIAS, lerRegistroDePendencias, type RegistroDePendencias } from './integralidade.js';
 import type { GravadorIndice, LeitorArquivos, Mudanca, Relogio, RepositorioGit } from './portas.js';
 import type { RegistroAutoria, RegistroNorma } from './tipos.js';
 
 /**
+ * Versão 4: vigência segundo a fonte (forca_legal_fonte) e pendências de integralidade.
  * Versão 3: ementa dos registros de tribunal tirada das seções (Questão, Enunciado, Tese,
  * textoEmenta) ou do primeiro parágrafo do texto.
  * Versão 2: tribunal de jurisprudencia/outros-tribunais e falhas das pastas acima do escopo.
  */
-export const VERSAO_ESQUEMA = 3;
+export const VERSAO_ESQUEMA = 4;
 const TAMANHO_LOTE = 500;
 const LOTE_AUTORIA = 2_000;
 const LEITURAS_SIMULTANEAS = 16;
@@ -52,6 +54,8 @@ export interface RelatorioSync {
   escopo: string[];
   corpo: string[];
   normas: number;
+  /** Normas no registro de pendências de integralidade do acervo. */
+  pendencias: number;
   duracao_ms: number;
 }
 
@@ -189,6 +193,56 @@ async function lerAutoria(
  * indexado e as entradas novas do escopo, lê a autoria e grava o commit novo só no fim.
  * Rodar de novo sem mudanças não altera nada.
  */
+interface PendenciasDoSync {
+  /** Normas do registro que está no índice. */
+  total: number;
+  /** Este sync gravou outro registro no índice. */
+  mudou: boolean;
+  /** Chaves de `meta` que o sync grava junto com as outras. */
+  meta: Record<string, string>;
+}
+
+/**
+ * Grava no índice o registro de pendências de integralidade do acervo. O registro fica fora das
+ * pastas de normas: o sync compara o identificador do conteúdo, que vem das árvores, e só lê o
+ * arquivo quando ele mudou.
+ */
+async function sincronizarPendencias(deps: DependenciasSync, commit: string): Promise<PendenciasDoSync> {
+  const { gravador } = deps;
+  const semMudanca: PendenciasDoSync = { total: Number(gravador.lerMeta('pendencias_total') ?? '0'), mudou: false, meta: {} };
+  const objeto = (await deps.git.objetoDoArquivo(commit, CAMINHO_DO_REGISTRO_DE_PENDENCIAS)) ?? '';
+  if (objeto === (gravador.lerMeta('pendencias_objeto') ?? '')) return semMudanca;
+  let registro: RegistroDePendencias | null = null;
+  if (objeto !== '') {
+    deps.log('info', 'lendo o registro de pendências de integralidade');
+    let conteudo: string;
+    try {
+      conteudo = await deps.git.lerObjeto(objeto);
+    } catch (erro) {
+      // As normas já estão no índice: uma falha aqui não desfaz o sync. O identificador não é
+      // gravado, e por isso o próximo sync lê o registro de novo.
+      deps.log('aviso', 'não foi possível ler o registro de pendências de integralidade: as pendências do índice não mudaram', {
+        erro: mensagemDe(erro),
+      });
+      return semMudanca;
+    }
+    registro = lerRegistroDePendencias(conteudo);
+    if (registro === null) deps.log('aviso', 'o registro de pendências de integralidade não tem o formato esperado: nenhuma pendência gravada');
+  }
+  gravador.substituirPendencias(registro?.pendentes ?? []);
+  const total = registro?.pendentes.length ?? 0;
+  return {
+    total,
+    mudou: true,
+    meta: {
+      pendencias_objeto: objeto,
+      pendencias_data: registro?.data ?? '',
+      pendencias_criterio: registro?.criterio ?? '',
+      pendencias_total: String(total),
+    },
+  };
+}
+
 export async function sincronizar(deps: DependenciasSync, configuracao: ConfiguracaoSync): Promise<RelatorioSync> {
   const inicio = deps.relogio.agora().getTime();
   const escopo = normalizarEscopo(configuracao.escopo);
@@ -297,7 +351,10 @@ export async function sincronizar(deps: DependenciasSync, configuracao: Configur
   const religadas = gravador.religarAutoria();
   gravador.podarSignatarios();
 
-  const houveMudanca = processador.gravadas + processador.removidas + removidasEscopo + autorias > 0 || anterior !== head;
+  const pendencias = await sincronizarPendencias(deps, head);
+
+  const houveMudanca =
+    processador.gravadas + processador.removidas + removidasEscopo + autorias > 0 || anterior !== head || pendencias.mudou;
   const sincronizadoEm = deps.relogio.agora().toISOString();
   gravador.gravarMeta({
     versao_esquema: String(VERSAO_ESQUEMA),
@@ -307,6 +364,7 @@ export async function sincronizar(deps: DependenciasSync, configuracao: Configur
     corpo: JSON.stringify(corpo),
     remoto: configuracao.remoto,
     ramo: configuracao.ramo,
+    ...pendencias.meta,
   });
   if (reescaneadas.length > 0) gravador.otimizar();
   const modo: RelatorioSync['modo'] = !houveMudanca ? 'sem_mudancas' : completo ? 'completo' : 'incremental';
@@ -322,6 +380,7 @@ export async function sincronizar(deps: DependenciasSync, configuracao: Configur
     escopo,
     corpo,
     normas: gravador.contarNormas(),
+    pendencias: pendencias.total,
     duracao_ms: deps.relogio.agora().getTime() - inicio,
   };
 }

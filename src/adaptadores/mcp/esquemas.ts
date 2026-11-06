@@ -31,7 +31,11 @@ const FILTROS: Record<string, JsonSchemaType> = {
   numero: { type: 'string', description: 'Número da norma, por exemplo 8.078, 123 ou 2200-2.' },
   data_de: { type: 'string', description: 'Data mínima da norma: AAAA-MM-DD ou só o ano AAAA.' },
   data_ate: { type: 'string', description: 'Data máxima da norma: AAAA-MM-DD ou só o ano AAAA.' },
-  revogada: { type: 'boolean', description: 'true: só normas marcadas como revogadas. false: só as não revogadas.' },
+  revogada: {
+    type: 'boolean',
+    description:
+      'true: só normas revogadas ou sem vigor segundo a fonte oficial. false: tira essas normas; as normas sem informação de vigência continuam.',
+  },
 };
 
 export const ESQUEMA_BUSCAR: JsonSchemaType = {

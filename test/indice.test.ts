@@ -37,7 +37,9 @@ describe('índice SQLite FTS5', () => {
     expect(buscar(null, { esfera: 'estaduais', uf: 'SP' })).toHaveLength(2);
     expect(buscar(null, { tipoChave: 'leis-ordinarias' })).toHaveLength(7);
     expect(buscar(null, { dataDe: '1990-01-01', dataAte: '1990-12-31' })).toHaveLength(3);
-    expect(buscar(null, { revogada: false })).toHaveLength(7);
+    // Nenhuma fixture é revogada nem sem vigor: as normas sem informação de vigência continuam no filtro.
+    expect(buscar(null, { revogada: false })).toHaveLength(14);
+    expect(buscar(null, { revogada: true })).toEqual([]);
     expect(buscar(null, { orgao: 'rfb' })).toEqual(['reguladores/rfb/2014/rfb-sijut-50055.md']);
     expect(buscar(null, { tribunal: 'stj' })).toEqual(['jurisprudencia/stj/sumulas/sumula-7.md']);
   });

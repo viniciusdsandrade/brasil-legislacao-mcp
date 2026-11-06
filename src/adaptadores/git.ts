@@ -131,6 +131,28 @@ export class GitLocal implements RepositorioGit {
     await this.git(['merge', '--ff-only', '--no-stat', commit]);
   }
 
+  async objetoDoArquivo(commit: string, caminho: string): Promise<string | null> {
+    validarCommit(commit);
+    validarPathspecs([caminho]);
+    let resultado: ResultadoProcesso;
+    try {
+      // Lê só as árvores. Com --verify --quiet, o git sai com código 1 e sem mensagem quando o arquivo não existe.
+      resultado = await executar(this.opcoes.binario, [...this.base(), 'rev-parse', '--verify', '--quiet', `${commit}:${caminho}`], {
+        ambiente: this.ambiente,
+      });
+    } catch (erro) {
+      throw this.erroDeGit(erro, 'rev-parse');
+    }
+    const objeto = resultado.saida.trim();
+    return resultado.codigo === 0 && COMMIT.test(objeto) ? objeto : null;
+  }
+
+  async lerObjeto(objeto: string): Promise<string> {
+    validarCommit(objeto);
+    // No clone parcial, o git busca este objeto no remoto quando ele ainda não está no disco.
+    return this.git(['cat-file', 'blob', objeto]);
+  }
+
   async head(): Promise<string> {
     const commit = (await this.git(['rev-parse', 'HEAD'])).trim();
     validarCommit(commit);

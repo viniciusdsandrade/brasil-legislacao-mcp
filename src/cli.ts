@@ -137,6 +137,7 @@ function mostrarEstado(configuracao: Configuracao): number {
       escopo_configurado: configuracao.escopo,
       corpo_configurado: configuracao.corpo,
       estado: indice.estado(),
+      pendencias_de_integralidade: indice.resumoDasPendencias(),
     });
     return 0;
   } finally {

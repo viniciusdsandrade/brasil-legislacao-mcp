@@ -272,4 +272,85 @@ describe('sincronização com um repositório git local', () => {
       outroIndice.fechar();
     }
   });
+
+  it('grava as pendências de integralidade do registro do acervo, só relê o registro quando ele muda e não para quando a leitura falha', async () => {
+    const caminhoDoRegistro = 'scripts/dados/pendencias-integralidade-publicadas.json';
+    const criterio = 'Textos preservados; integralidade não validada.';
+    const gravarRegistro = (data: string, pendentes: unknown[]): void => {
+      mkdirSync(dirname(join(origem, caminhoDoRegistro)), { recursive: true });
+      writeFileSync(join(origem, caminhoDoRegistro), JSON.stringify({ data, criterio, pendentes }, null, 2));
+    };
+    // Pendências inventadas para o teste: o registro real não lista as normas das fixtures.
+    gravarRegistro('2026-11-01', [
+      { path: CAMINHO_CC, sha256_md: 'abc', estado: 'pendencia_de_teste', motivo: 'Pendência inventada para o teste.', evidencia: {} },
+      // Uma norma fora do escopo deste sync continua no registro.
+      { path: 'estaduais/MG/decretos/1970/dec-1-1970.md', estado: 'pendencia_de_teste', motivo: 'Outra pendência inventada.' },
+      { path: '../fora-do-acervo.md', estado: 'x', motivo: 'y' },
+    ]);
+    commitar('Acrescenta o registro de pendências de integralidade');
+    const relatorio = await sync(['federal']);
+    expect(relatorio).toMatchObject({ modo: 'incremental', gravadas: 0, pendencias: 2 });
+    expect(indice.pendenciaDe(CAMINHO_CC)).toEqual({
+      caminho: CAMINHO_CC,
+      estado: 'pendencia_de_teste',
+      motivo: 'Pendência inventada para o teste.',
+    });
+    expect(indice.contarPendencias({ esfera: 'federal' })).toBe(1);
+    expect(indice.resumoDasPendencias()).toEqual({ data: '2026-11-01', criterio, total: 2 });
+    // O registro fica fora das pastas de normas: o sync lê o objeto do git, sem pôr a pasta scripts no disco.
+    expect(existsSync(join(clone, 'scripts'))).toBe(false);
+
+    const semMudancas = await sync(['federal']);
+    expect(semMudancas).toMatchObject({ modo: 'sem_mudancas', pendencias: 2 });
+
+    const remoto = `file://${origem}`;
+    const syncComAvisos = async (ajustar: (git: GitLocal) => void = () => undefined): Promise<{ relatorio: RelatorioSync; avisos: string[] }> => {
+      const avisos: string[] = [];
+      const gitDoSync = new GitLocal({ binario: 'git', diretorio: clone, remoto, ramo: 'main' });
+      ajustar(gitDoSync);
+      const relatorio = await sincronizar(
+        {
+          git: gitDoSync,
+          gravador: indice,
+          leitor: new LeitorDoClone(clone),
+          relogio: { agora: () => new Date() },
+          log: (nivel, mensagem) => {
+            if (nivel === 'aviso') avisos.push(mensagem);
+          },
+        },
+        { remoto, ramo: 'main', escopo: ['federal'], corpo: [] },
+      );
+      return { relatorio, avisos };
+    };
+
+    // O registro muda, mas a leitura do objeto falha (sem rede, por exemplo): o sync termina, as
+    // pendências do índice ficam como estavam e o sync seguinte lê o registro de novo.
+    gravarRegistro('2026-11-05', [{ path: CAMINHO_CC, estado: 'pendencia_de_teste', motivo: 'Pendência inventada para o teste.' }]);
+    commitar('Atualiza o registro de pendências');
+    const semLeitura = await syncComAvisos((gitDoSync) => {
+      gitDoSync.lerObjeto = () => Promise.reject(new Error('git cat-file falhou: sem rede'));
+    });
+    expect(semLeitura.relatorio).toMatchObject({ modo: 'incremental', pendencias: 2 });
+    expect(semLeitura.avisos).toEqual([expect.stringContaining('não foi possível ler o registro de pendências')]);
+    expect(indice.resumoDasPendencias()).toEqual({ data: '2026-11-01', criterio, total: 2 });
+    const comLeitura = await sync(['federal']);
+    expect(comLeitura).toMatchObject({ modo: 'incremental', gravadas: 0, pendencias: 1 });
+    expect(indice.resumoDasPendencias()).toEqual({ data: '2026-11-05', criterio, total: 1 });
+
+    // O acervo valida o texto e tira a norma do registro: a pendência sai do índice.
+    gravarRegistro('2026-11-07', []);
+    commitar('Resolve as pendências de integralidade');
+    const depois = await sync(['federal']);
+    expect(depois).toMatchObject({ modo: 'incremental', pendencias: 0 });
+    expect(indice.pendenciaDe(CAMINHO_CC)).toBeNull();
+    expect(indice.resumoDasPendencias()).toEqual({ data: '2026-11-07', criterio, total: 0 });
+
+    // Um registro ilegível não derruba o sync: fica sem pendências.
+    writeFileSync(join(origem, caminhoDoRegistro), 'isto não é JSON');
+    commitar('Quebra o registro');
+    const quebrado = await syncComAvisos();
+    expect(quebrado.relatorio).toMatchObject({ pendencias: 0 });
+    expect(quebrado.avisos).toEqual([expect.stringContaining('não tem o formato esperado')]);
+    expect(indice.resumoDasPendencias()).toEqual({ data: null, criterio: null, total: 0 });
+  });
 });

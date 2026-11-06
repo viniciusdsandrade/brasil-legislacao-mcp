@@ -30,6 +30,13 @@ export interface InfoCaminho {
 export type ValorCabecalho = string | boolean | null;
 export type Cabecalho = Record<string, ValorCabecalho>;
 
+/**
+ * Vigência que a fonte oficial informa, do campo `forca_legal_fonte` do cabeçalho
+ * (legislationLegalForce da API do Senado): InForce, NotInForce ou PartiallyInForce.
+ */
+export const VIGENCIAS_NA_FONTE = ['em_vigor', 'sem_vigor', 'parcial'] as const;
+export type VigenciaNaFonte = (typeof VIGENCIAS_NA_FONTE)[number];
+
 /** Uma norma como o índice a guarda. */
 export interface Norma {
   caminho: string;
@@ -50,6 +57,8 @@ export interface Norma {
   ementaDerivada: boolean;
   situacao: string | null;
   revogada: boolean | null;
+  /** Vigência segundo a fonte oficial. Null quando a fonte não informa. */
+  vigenciaNaFonte: VigenciaNaFonte | null;
   versaoTexto: string | null;
   fonte: string | null;
   baixadoEm: string | null;
@@ -75,6 +84,10 @@ export interface FiltroNormas {
   numeroNormalizado?: string | undefined;
   dataDe?: string | undefined;
   dataAte?: string | undefined;
+  /**
+   * true: só as normas revogadas ou sem vigor segundo a fonte. false: tira essas normas;
+   * as normas sem informação de vigência continuam.
+   */
   revogada?: boolean | undefined;
   /** Prefixo de caminho (pasta do recorte), sem barra final. */
   prefixo?: string | undefined;
@@ -99,6 +112,28 @@ export interface EstadoIndice {
   corpo: string[];
   total: number;
   porEsfera: Contagem[];
+}
+
+/**
+ * Norma que o registro de pendências de integralidade do acervo lista: o texto está
+ * preservado, mas ainda não foi validado como completo.
+ */
+export interface Pendencia {
+  caminho: string;
+  /** Estado no registro, por exemplo "suplemento_ausente_na_transcricao". */
+  estado: string;
+  /** Motivo, nas palavras do registro. */
+  motivo: string;
+}
+
+/** Dados gerais do registro de pendências gravado no índice. */
+export interface ResumoPendencias {
+  /** Data do registro (AAAA-MM-DD), ou null. */
+  data: string | null;
+  /** Critério do registro, nas palavras dele, ou null. */
+  criterio: string | null;
+  /** Normas listadas no registro. */
+  total: number;
 }
 
 /** Autoria de uma norma, lida dos commits da base inicial. */

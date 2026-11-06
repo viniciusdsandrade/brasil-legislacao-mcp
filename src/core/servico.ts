@@ -22,6 +22,7 @@ import {
   type PosicaoPagina,
 } from './dispositivos.js';
 import { ErroLeis } from './erros.js';
+import { avisoDaPendencia } from './integralidade.js';
 import { caracteresDoOrcamento, normalizarOrcamento } from './orcamento.js';
 import type { Acervo, BuscaTextual, ConsultaIndice, OcorrenciaTexto } from './portas.js';
 import { arrumarParaExibir, linhaSoTachada, removerTachado, semMarcasDeTachado } from './tachado.js';
@@ -36,6 +37,7 @@ import {
   type EstadoIndice,
   type FiltroNormas,
   type Norma,
+  type VigenciaNaFonte,
 } from './tipos.js';
 import { chaveDeTipo, ehPastaCanonica, rotuloDeChave } from './vocabulario.js';
 
@@ -279,6 +281,17 @@ export function uriDe(caminho: string): string {
   return `leis://${encodeURIComponent(caminho)}`;
 }
 
+const ROTULO_DA_VIGENCIA: Readonly<Record<VigenciaNaFonte, string>> = {
+  em_vigor: 'em vigor',
+  sem_vigor: 'sem vigor',
+  parcial: 'parcialmente em vigor',
+};
+
+/** Vigência segundo a fonte oficial, em palavras, ou null quando a fonte não informa. */
+function vigenciaEmPalavras(norma: Norma): string | null {
+  return norma.vigenciaNaFonte === null ? null : ROTULO_DA_VIGENCIA[norma.vigenciaNaFonte];
+}
+
 export function itemResumido(norma: Norma): Item {
   const item: Item = {
     caminho: norma.caminho,
@@ -291,6 +304,10 @@ export function itemResumido(norma: Norma): Item {
   if (norma.ementa !== null) item['ementa'] = truncar(norma.ementa, 240);
   if (norma.ementaDerivada) item['ementa_derivada'] = true;
   if (norma.situacao !== null) item['situacao'] = norma.situacao;
+  // O item compacto só leva a vigência quando há o que dizer: revogada, ou o que a fonte informa.
+  if (norma.revogada === true) item['revogada'] = true;
+  const vigencia = vigenciaEmPalavras(norma);
+  if (vigencia !== null) item['vigencia_na_fonte'] = vigencia;
   item['fonte'] = norma.fonte;
   item['versao_texto'] = norma.versaoTexto;
   item['baixado_em'] = norma.baixadoEm;
@@ -318,6 +335,7 @@ export function itemCompleto(norma: Norma): Item {
     ementa_derivada: norma.ementaDerivada,
     situacao: norma.situacao,
     revogada: norma.revogada,
+    vigencia_na_fonte: vigenciaEmPalavras(norma),
     urn: norma.urn,
     fonte: norma.fonte,
     versao_texto: norma.versaoTexto,
@@ -338,6 +356,10 @@ export function avisosDaNorma(norma: Norma): string[] {
   if (norma.semTexto) avisos.push('A fonte oficial não disponibiliza o texto desta norma; o acervo guarda só os metadados.');
   if (norma.ocr) avisos.push('Texto obtido por OCR; pode ter erros de reconhecimento. Confira na fonte antes de citar.');
   if (norma.revogada === true) avisos.push('O cabeçalho marca a norma como revogada (revogada: true).');
+  if (norma.vigenciaNaFonte === 'sem_vigor') {
+    avisos.push('A fonte oficial marca esta norma como sem vigor (NotInForce). O acervo não informa o motivo nem o ato que tirou a vigência.');
+  }
+  if (norma.vigenciaNaFonte === 'parcial') avisos.push('A fonte oficial marca esta norma como parcialmente em vigor (PartiallyInForce).');
   if (norma.situacao !== null && /revog|sem efic|cancelad|inconstitucional|n[ãa]o vigente|caduc|rejeitad|sem efeito|suspens/i.test(norma.situacao)) {
     avisos.push(`Situação informada na fonte: ${norma.situacao}.`);
   }
@@ -436,15 +458,14 @@ export class ServicoLeis {
       motor = fts === null ? 'filtro' : 'fts5';
     }
 
-    const itens = normas.slice(0, limite).map((norma) => {
-      const saida = item(norma, formato);
-      const trecho = trechos.get(norma.caminho);
+    const itens = this.itens(indice, normas.slice(0, limite), formato);
+    for (const saida of itens) {
+      const trecho = trechos.get(String(saida['caminho']));
       if (trecho !== undefined) {
         saida['linha'] = trecho.linha;
         saida['trecho'] = truncar(trecho.trecho.trim(), 300);
       }
-      return saida;
-    });
+    }
     const resposta: Resposta = {
       itens,
       total,
@@ -494,9 +515,12 @@ export class ServicoLeis {
     const referencia = this.lerReferencia(textoReferencia);
     const formato = opcao(entrada.formato, 'formato', ['resumido', 'completo'] as const, 'resumido');
     const resolucao = this.resolver(indice, estado, referencia, { esfera: lerEsfera(entrada.esfera), uf: lerUf(entrada.uf) });
-    if ('candidatos' in resolucao) return this.respostaCandidatos(resolucao, formato);
+    if ('candidatos' in resolucao) return this.respostaCandidatos(indice, resolucao, formato);
     const { norma } = resolucao;
     const avisos = [...resolucao.avisos, ...avisosDaNorma(norma)];
+    const pendencia = indice.pendenciaDe(norma.caminho);
+    const registroDePendencias = pendencia === null ? null : indice.resumoDasPendencias();
+    if (pendencia !== null) avisos.push(avisoDaPendencia(pendencia, registroDePendencias?.data ?? null));
     const citado = referencia.forma === 'citacao' ? referencia.dispositivo : null;
     const pedido = {
       artigo: textoOpcional(entrada.artigo, 'artigo', 40) ?? citado?.artigo,
@@ -511,6 +535,10 @@ export class ServicoLeis {
     const incluirTachado = booleano(entrada.incluir_tachado, 'incluir_tachado') === true;
     const cabecalhoNorma: Item = { ...item(norma, formato), uri: uriDe(norma.caminho) };
     const base: Resposta = { norma: cabecalhoNorma };
+    if (pendencia !== null) {
+      cabecalhoNorma['integralidade'] = 'pendente';
+      base['integralidade'] = { estado: pendencia.estado, motivo: pendencia.motivo, registro_de: registroDePendencias?.data ?? null };
+    }
     if (norma.semTexto) {
       return { ...base, texto: '', avisos, aviso_legal: AVISO_LEGAL };
     }
@@ -735,6 +763,14 @@ export class ServicoLeis {
       }
     }
     if (linhaUf !== null && linhaUf.semTexto !== '') lacunas.push(`Normas de ${linhaUf.uf} sem texto na fonte: ${linhaUf.semTexto}.`);
+    // A cobertura resumida explica um resultado vazio: a integralidade das normas que existem não entra nela.
+    const registroDePendencias = indice.resumoDasPendencias();
+    const pendentesNoRecorte = resumida || registroDePendencias.total === 0 ? 0 : indice.contarPendencias(filtroDoRecorte);
+    if (pendentesNoRecorte > 0) {
+      lacunas.push(
+        `${pendentesNoRecorte} norma(s) do recorte com integralidade pendente no registro do acervo: o texto está preservado, mas ainda não foi validado como completo.`,
+      );
+    }
     for (const resumo of falhas) {
       const principal = resumo.motivos[0];
       lacunas.push(
@@ -777,6 +813,12 @@ export class ServicoLeis {
       progresso_gerado_em: progresso?.geradoEm ?? null,
       cobertura_uf: linhaUf,
       falhas,
+      integralidade: {
+        pendentes_no_recorte: pendentesNoRecorte,
+        pendentes_no_registro: registroDePendencias.total,
+        registro_de: registroDePendencias.data,
+        criterio: registroDePendencias.criterio,
+      },
       lacunas,
       aviso: AVISO_AUSENCIA,
     };
@@ -811,12 +853,13 @@ export class ServicoLeis {
     if (textoReferencia !== undefined) {
       const referencia = this.lerReferencia(textoReferencia);
       const resolucao = this.resolver(indice, estado, referencia, {});
-      if ('candidatos' in resolucao) return this.respostaCandidatos(resolucao, formato);
+      if ('candidatos' in resolucao) return this.respostaCandidatos(indice, resolucao, formato);
       const { norma } = resolucao;
       const autoria = indice.autoriaDe(norma.caminho);
+      const [daNorma] = this.itens(indice, [norma], formato);
       if (autoria === null) {
         return {
-          norma: item(norma, formato),
+          norma: daNorma,
           autoria: null,
           mensagem:
             'Sem autoria registrada para esta norma. Só a base inicial do histórico tem signatários; os lotes posteriores não registram autoria.',
@@ -825,7 +868,7 @@ export class ServicoLeis {
         };
       }
       return {
-        norma: item(norma, formato),
+        norma: daNorma,
         autoria: { autor: autoria.autor, coautores: autoria.coautores, origem: autoria.origem, data: norma.data },
         observacao,
       };
@@ -845,7 +888,7 @@ export class ServicoLeis {
         parecidos,
       );
     }
-    const itens = encontrado.normas.slice(0, limite).map((norma) => item(norma, formato));
+    const itens = this.itens(indice, encontrado.normas.slice(0, limite), formato);
     const resposta: Resposta = { signatario: encontrado.nome, total: encontrado.total, itens, cursor: null, observacao };
     caberItens(resposta, itens, this.maximoCaracteres);
     if (encontrado.normas.length > itens.length) {
@@ -860,14 +903,30 @@ export class ServicoLeis {
   async lerRecurso(caminho: string): Promise<string> {
     const valido = exigirCaminho(caminho);
     const texto = await this.deps.acervo.ler(valido);
+    const nota = this.notaDeIntegralidade(valido);
     const maximo = this.maximoCaracteres;
-    if (texto.length <= maximo) return texto;
+    if (texto.length <= maximo) return nota === '' ? texto : `${texto.trimEnd()}\n\n${nota}\n`;
     const quebra = texto.lastIndexOf('\n', maximo);
     const parte = texto.slice(0, quebra > maximo * 0.5 ? quebra : maximo);
     return (
       `${parte}\n\n[Texto truncado: ${parte.length} de ${texto.length} caracteres, pelo orçamento de tokens (LEIS_ORCAMENTO_TOKENS). ` +
-      `Use leis_obter com referencia "${valido}" e o cursor da resposta para ler o resto.]`
+      `Use leis_obter com referencia "${valido}" e o cursor da resposta para ler o resto.]` +
+      (nota === '' ? '' : `\n\n${nota}`)
     );
+  }
+
+  /**
+   * Nota para o fim do recurso de uma norma com integralidade pendente. O recurso é o arquivo do
+   * acervo e não depende do índice: sem índice, ele vem sem a nota.
+   */
+  private notaDeIntegralidade(caminho: string): string {
+    try {
+      const indice = this.deps.indice();
+      const pendencia = indice.pendenciaDe(caminho);
+      return pendencia === null ? '' : `[${avisoDaPendencia(pendencia, indice.resumoDasPendencias().data)}]`;
+    } catch {
+      return '';
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -995,8 +1054,18 @@ export class ServicoLeis {
     return { candidatos: achadas, mensagem: 'A referência casa com mais de uma norma.' };
   }
 
-  private respostaCandidatos(resolucao: { candidatos: Norma[]; mensagem: string }, formato: Formato): Resposta {
-    const candidatos = resolucao.candidatos.map((norma) => item(norma, formato));
+  /** Itens de saída, com a marca das normas que o registro de pendências de integralidade lista. */
+  private itens(indice: ConsultaIndice, normas: readonly Norma[], formato: Formato): Item[] {
+    const pendentes = new Set(indice.caminhosComPendencia(normas.map((norma) => norma.caminho)));
+    return normas.map((norma) => {
+      const saida = item(norma, formato);
+      if (pendentes.has(norma.caminho)) saida['integralidade'] = 'pendente';
+      return saida;
+    });
+  }
+
+  private respostaCandidatos(indice: ConsultaIndice, resolucao: { candidatos: Norma[]; mensagem: string }, formato: Formato): Resposta {
+    const candidatos = this.itens(indice, resolucao.candidatos, formato);
     const resposta: Resposta = {
       candidatos,
       total_candidatos: resolucao.candidatos.length,

@@ -5,16 +5,20 @@ import { ErroLeis } from '../../core/erros.js';
 import type { ConsultaIndice, GravadorIndice } from '../../core/portas.js';
 import { VERSAO_ESQUEMA } from '../../core/sincronizacao.js';
 import { dobrar } from '../../core/texto.js';
-import type {
-  Autoria,
-  Contagem,
-  Dimensao,
-  Esfera,
-  EstadoIndice,
-  FiltroNormas,
-  Norma,
-  RegistroAutoria,
-  RegistroNorma,
+import {
+  VIGENCIAS_NA_FONTE,
+  type Autoria,
+  type Contagem,
+  type Dimensao,
+  type Esfera,
+  type EstadoIndice,
+  type FiltroNormas,
+  type Norma,
+  type Pendencia,
+  type RegistroAutoria,
+  type RegistroNorma,
+  type ResumoPendencias,
+  type VigenciaNaFonte,
 } from '../../core/tipos.js';
 
 type BancoDeDados = Database.Database;
@@ -46,6 +50,7 @@ CREATE TABLE IF NOT EXISTS normas (
   ementa_derivada INTEGER NOT NULL DEFAULT 0,
   situacao TEXT,
   revogada INTEGER,
+  vigencia_fonte TEXT,
   versao_texto TEXT,
   fonte TEXT,
   baixado_em TEXT,
@@ -96,7 +101,16 @@ CREATE INDEX IF NOT EXISTS autoria_signatario ON autoria(signatario_id);
 CREATE TABLE IF NOT EXISTS falhas_arquivos (
   caminho TEXT PRIMARY KEY
 ) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS pendencias (
+  caminho TEXT PRIMARY KEY,
+  estado TEXT NOT NULL,
+  motivo TEXT NOT NULL
+) WITHOUT ROWID;
 `;
+
+/** Colunas que entraram depois da primeira versão da tabela `normas`. Um índice antigo ganha as que faltam. */
+const COLUNAS_ACRESCENTADAS: ReadonlyArray<readonly [string, string]> = [['vigencia_fonte', 'TEXT']];
 
 const COLUNAS_NORMA = [
   'caminho',
@@ -117,6 +131,7 @@ const COLUNAS_NORMA = [
   'ementa_derivada',
   'situacao',
   'revogada',
+  'vigencia_fonte',
   'versao_texto',
   'fonte',
   'baixado_em',
@@ -149,6 +164,7 @@ interface LinhaNorma {
   ementa_derivada: number;
   situacao: string | null;
   revogada: number | null;
+  vigencia_fonte: string | null;
   versao_texto: string | null;
   fonte: string | null;
   baixado_em: string | null;
@@ -176,6 +192,10 @@ function escaparLike(texto: string): string {
   return texto.replace(/[\\%_]/g, (caractere) => `\\${caractere}`);
 }
 
+function paraVigencia(valor: string | null): VigenciaNaFonte | null {
+  return VIGENCIAS_NA_FONTE.find((vigencia) => vigencia === valor) ?? null;
+}
+
 function paraNorma(linha: LinhaNorma): Norma {
   return {
     caminho: linha.caminho,
@@ -196,6 +216,7 @@ function paraNorma(linha: LinhaNorma): Norma {
     ementaDerivada: linha.ementa_derivada === 1,
     situacao: linha.situacao,
     revogada: linha.revogada === null ? null : linha.revogada === 1,
+    vigenciaNaFonte: paraVigencia(linha.vigencia_fonte),
     versaoTexto: linha.versao_texto,
     fonte: linha.fonte,
     baixadoEm: linha.baixado_em,
@@ -226,6 +247,7 @@ function parametrosDaNorma(registro: RegistroNorma): ParametrosNorma {
     ementa_derivada: registro.ementaDerivada ? 1 : 0,
     situacao: registro.situacao,
     revogada: registro.revogada === null ? null : registro.revogada ? 1 : 0,
+    vigencia_fonte: registro.vigenciaNaFonte,
     versao_texto: registro.versaoTexto,
     fonte: registro.fonte,
     baixado_em: registro.baixadoEm,
@@ -277,10 +299,10 @@ function condicoes(filtro: FiltroNormas): Condicoes {
     sql.push('n.data <= ?');
     parametros.push(filtro.dataAte);
   }
-  if (filtro.revogada !== undefined) {
-    sql.push('n.revogada = ?');
-    parametros.push(filtro.revogada ? 1 : 0);
-  }
+  // "Sem vigor" junta o que o cabeçalho marca como revogado e o que a fonte marca como sem vigor.
+  // As normas sem informação ficam do lado das não revogadas.
+  if (filtro.revogada === true) sql.push("(n.revogada = 1 OR n.vigencia_fonte = 'sem_vigor')");
+  if (filtro.revogada === false) sql.push("(n.revogada IS NOT 1 AND n.vigencia_fonte IS NOT 'sem_vigor')");
   if (filtro.prefixo !== undefined) {
     sql.push("(n.caminho = ? OR n.caminho LIKE ? ESCAPE '\\')");
     parametros.push(filtro.prefixo, `${escaparLike(filtro.prefixo)}/%`);
@@ -543,6 +565,39 @@ export class IndiceSqlite implements ConsultaIndice, GravadorIndice {
       .map((linha) => linha.caminho);
   }
 
+  pendenciaDe(caminho: string): Pendencia | null {
+    return (
+      this.db.prepare<[string], Pendencia>('SELECT caminho, estado, motivo FROM pendencias WHERE caminho = ?').get(caminho) ?? null
+    );
+  }
+
+  caminhosComPendencia(caminhos: readonly string[]): string[] {
+    const saida: string[] = [];
+    for (let i = 0; i < caminhos.length; i += 400) {
+      const fatia = caminhos.slice(i, i + 400);
+      const marcas = fatia.map(() => '?').join(',');
+      const linhas = this.db.prepare<string[], { caminho: string }>(`SELECT caminho FROM pendencias WHERE caminho IN (${marcas})`).all(...fatia);
+      for (const linha of linhas) saida.push(linha.caminho);
+    }
+    return saida;
+  }
+
+  contarPendencias(filtro: FiltroNormas): number {
+    const { sql, parametros } = condicoes(filtro);
+    const onde = sql.length > 0 ? `WHERE ${sql.join(' AND ')}` : '';
+    return (
+      this.db
+        .prepare<Parametro[], { total: number }>(`SELECT count(*) AS total FROM pendencias p JOIN normas n ON n.caminho = p.caminho ${onde}`)
+        .get(...parametros)?.total ?? 0
+    );
+  }
+
+  resumoDasPendencias(): ResumoPendencias {
+    const total = this.db.prepare<[], { total: number }>('SELECT count(*) AS total FROM pendencias').get()?.total ?? 0;
+    // O sync grava texto vazio quando o registro não informa a data ou o critério.
+    return { data: this.lerMeta('pendencias_data') || null, criterio: this.lerMeta('pendencias_criterio') || null, total };
+  }
+
   // -------------------------------------------------------------------------
   // Escrita
 
@@ -564,6 +619,7 @@ export class IndiceSqlite implements ConsultaIndice, GravadorIndice {
       DELETE FROM autoria;
       DELETE FROM signatarios;
       DELETE FROM falhas_arquivos;
+      DELETE FROM pendencias;
       DELETE FROM meta;
     `);
   }
@@ -703,6 +759,14 @@ export class IndiceSqlite implements ConsultaIndice, GravadorIndice {
       .map((linha) => linha.caminho);
   }
 
+  substituirPendencias(pendentes: readonly Pendencia[]): void {
+    const inserir = this.db.prepare<[string, string, string]>('INSERT OR REPLACE INTO pendencias (caminho, estado, motivo) VALUES (?, ?, ?)');
+    this.db.transaction((lista: readonly Pendencia[]) => {
+      this.db.exec('DELETE FROM pendencias');
+      for (const pendencia of lista) inserir.run(pendencia.caminho, pendencia.estado, pendencia.motivo);
+    })(pendentes);
+  }
+
   contarNormas(): number {
     return this.db.prepare<[], { total: number }>('SELECT count(*) AS total FROM normas').get()?.total ?? 0;
   }
@@ -720,6 +784,17 @@ export function abrirIndiceEscrita(arquivo: string): IndiceSqlite {
   db.pragma('synchronous = NORMAL');
   db.pragma('temp_store = MEMORY');
   db.exec(ESQUEMA);
+  // O CREATE TABLE IF NOT EXISTS não muda uma tabela que já existe: um índice de versão antiga
+  // ganha aqui as colunas novas. O sync refaz os dados quando a versão do esquema muda.
+  const existentes = new Set(
+    db
+      .prepare<[], { name: string }>("SELECT name FROM pragma_table_info('normas')")
+      .all()
+      .map((coluna) => coluna.name),
+  );
+  for (const [coluna, tipo] of COLUNAS_ACRESCENTADAS) {
+    if (!existentes.has(coluna)) db.exec(`ALTER TABLE normas ADD COLUMN ${coluna} ${tipo}`);
+  }
   return new IndiceSqlite(db);
 }
 

@@ -4,7 +4,7 @@ import { normalizarNumero } from './citacao.js';
 import { analisarDocumento } from './documento.js';
 import { removerTachado } from './tachado.js';
 import { dataIso, limparMarkdown, slug, textoOuNulo } from './texto.js';
-import type { RegistroNorma } from './tipos.js';
+import type { RegistroNorma, VigenciaNaFonte } from './tipos.js';
 import { chaveDeTipoDaNorma } from './vocabulario.js';
 
 /** Limite do corpo guardado no índice FTS5 por norma. */
@@ -22,6 +22,38 @@ export function corpoParaIndice(corpo: string): string {
     .filter((linha) => linha !== '');
   const texto = linhas.join('\n');
   return texto.length > MAX_CORPO_INDEXADO ? texto.slice(0, MAX_CORPO_INDEXADO) : texto;
+}
+
+/** Valores do legislationLegalForce da fonte, sem maiúsculas nem separadores. */
+const FORCA_LEGAL: Readonly<Record<string, VigenciaNaFonte>> = {
+  inforce: 'em_vigor',
+  notinforce: 'sem_vigor',
+  partiallyinforce: 'parcial',
+};
+
+/**
+ * Lê o campo `forca_legal_fonte` do cabeçalho: uma lista JSON com o legislationLegalForce da
+ * fonte oficial, por exemplo ["NotInForce"]. Uma lista vazia quer dizer que a fonte não
+ * informa. Valores diferentes na mesma lista viram "parcial".
+ */
+export function vigenciaNaFonte(valor: unknown): VigenciaNaFonte | null {
+  const texto = textoOuNulo(valor);
+  if (texto === null) return null;
+  let lido: unknown;
+  try {
+    lido = JSON.parse(texto);
+  } catch {
+    lido = texto;
+  }
+  const lidas = new Set<VigenciaNaFonte>();
+  for (const item of Array.isArray(lido) ? (lido as unknown[]) : [lido]) {
+    if (typeof item !== 'string') continue;
+    const vigencia = FORCA_LEGAL[item.replace(/[^A-Za-z]/g, '').toLowerCase()];
+    if (vigencia !== undefined) lidas.add(vigencia);
+  }
+  const [unica] = [...lidas];
+  if (unica === undefined) return null;
+  return lidas.size === 1 ? unica : 'parcial';
 }
 
 function anoInteiro(valor: unknown): number | null {
@@ -80,6 +112,7 @@ export function registroDaNorma(caminho: string, conteudo: string, indexarCorpo:
     ementaDerivada: ementa === null && analise.ementaDerivada !== null,
     situacao: textoOuNulo(cabecalho['situacao']),
     revogada: typeof revogada === 'boolean' ? revogada : null,
+    vigenciaNaFonte: vigenciaNaFonte(cabecalho['forca_legal_fonte']),
     versaoTexto,
     fonte,
     baixadoEm,
