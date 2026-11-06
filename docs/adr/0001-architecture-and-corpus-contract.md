@@ -229,6 +229,29 @@ The parser now removes the Markdown emphasis from the first 24 characters of a l
 
 A letter after the number is a suffix (`Art. 4º-A`). When a space separates the number and the hyphen, the letter is a suffix only when punctuation follows it: `**Art. 4º** -B. As fundações` is article 4º-B, and `**Artigo 2º** -O crédito aberto` is article 2º, because the dash starts the sentence. Before, the bold hid these cases, and 11 federal files had an article with a wrong key (4º-B read as 4º).
 
+### D25. Legal force from the source
+
+The federal collector of the corpus writes the key `forca_legal_fonte`. It is the `legislationLegalForce` of the Senate API (normas.leg.br): a JSON list with `InForce`, `NotInForce` or `PartiallyInForce`. The collector writes `revogada: false` only when the source says `InForce`. In all other cases it writes `revogada: null` and keeps the value of the source. On 2026-11-06, 89,792 federal norms (47% of `federal`, 82% of the federal decrees) have `["NotInForce"]`, and all of them have `revogada: null`. The index read only `revogada`, so it did not know that these norms are not in force. A search with `revogada: true` found 1,456 federal decrees, and the compact item did not show `revogada`.
+
+The index now keeps the legal force of the source in the column `vigencia_fonte`: `em_vigor`, `sem_vigor`, `parcial`, or null when the source does not give it or the list is empty. The value is what the source says. The index does not conclude that a norm is in force.
+
+1. The item has `vigencia_na_fonte` in words (`em vigor`, `sem vigor`, `parcialmente em vigor`) when the source gives it. The compact item also has `revogada: true` when the header marks the norm as revoked.
+2. `leis_obter` gives a notice when the source marks the norm as not in force or partially in force.
+3. The filter `revogada: true` selects the norms with `revogada: true` in the header or with `sem_vigor` in the source. The filter `revogada: false` removes these norms and keeps the norms without information. Before, `revogada: false` selected only the norms with `revogada: false` in the header, and almost all decrees were out of the result.
+
+The index schema has version 4 for this change and for D26, so an index of version 3 is made again. The table `normas` of an old index gets the new column when the sync opens the index.
+
+### D26. Pending integrity
+
+The corpus has a registry of pending integrity, `scripts/dados/pendencias-integralidade-publicadas.json`. It lists the norms whose text is preserved but not validated as complete. Each item has `path`, `sha256_md`, `estado`, `motivo` and `evidencia`. On 2026-11-06 the registry has the date 2026-11-01 and 7,639 norms: 6,209 federal decrees, 1,421 state norms (MG and PE), 6 municipal norms and 3 acts of regulators. In most cases the norm approves an annex, a statute or a table, and the text ends at the signatures. In 5,545 of the 6,209 federal files, the text has only an empty label in the place of the object, for example `<<Anexo>>` or `<TABELA>`. The server gave these texts without a notice.
+
+The registry is not in a norm folder, so the checkout does not have it. The sync gets the object identifier of the file from the trees (`git rev-parse <commit>:<path>`). When the identifier is different from the one in the index, the sync reads the object with `git cat-file blob`. In the partial clone, git downloads only this object (about 12 MB). The sync writes all items of the registry to the table `pendencias`, also the items out of the local scope. The registry does not stop the sync. When git cannot read the object, the sync gives a warning in the log, keeps the pending norms that the index has, and reads the registry again in the next sync. When the content does not have the expected format, the sync gives a warning and writes no pending norms.
+
+1. The item of a pending norm has `integralidade: pendente`.
+2. `leis_obter` gives the state, the reason and the date of the registry in `integralidade`, and a notice. The notice says in plain words what the registry points at. For 7,408 norms, the text may not have an annex, a supplement or another object that the norm refers to. For 224 norms, the text may have characters that are different from the source. For the other 7 norms, the text or the data of the norm may be incomplete or different from the source. The notice does not say that text is missing, because the criterion of the registry is conservative.
+3. `leis_cobertura` gives the number of pending norms in the slice and in the registry, with the date and the criterion. The short coverage that comes with an empty result does not have this number: it explains why a norm is not found.
+4. The resource `leis://{caminho}` is the file of the corpus. For a pending norm, the text ends with the same notice, in brackets. The resource does not use the index for the text: without an index, the text does not have the notice.
+
 ## Consequences
 
 1. A new harness needs only a folder in `clients/`. The folder has guides for Claude Code, Codex, Grok, Antigravity and the GLM clients.
