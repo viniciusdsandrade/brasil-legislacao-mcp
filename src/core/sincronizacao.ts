@@ -1,12 +1,24 @@
 import { LeitorLogAutoria } from './autoria.js';
-import { analisarCaminho, escopoCobre, falhasAncestrais, normalizarEscopo, pastasDoCheckout, pathspecDaEntrada } from './caminho.js';
+import {
+  analisarCaminho,
+  escopoCobre,
+  falhasAncestrais,
+  normalizarEscopo,
+  pastasDoCheckout,
+  pastasDoCheckoutDaEntrada,
+  pathspecDaEntrada,
+} from './caminho.js';
 import { ErroLeis } from './erros.js';
 import { registroDaNorma } from './indexacao.js';
 import type { GravadorIndice, LeitorArquivos, Mudanca, Relogio, RepositorioGit } from './portas.js';
 import type { RegistroAutoria, RegistroNorma } from './tipos.js';
 
-/** Versão 2: tribunal de jurisprudencia/outros-tribunais e falhas das pastas acima do escopo. */
-export const VERSAO_ESQUEMA = 2;
+/**
+ * Versão 3: ementa dos registros de tribunal tirada das seções (Questão, Enunciado, Tese,
+ * textoEmenta) ou do primeiro parágrafo do texto.
+ * Versão 2: tribunal de jurisprudencia/outros-tribunais e falhas das pastas acima do escopo.
+ */
+export const VERSAO_ESQUEMA = 3;
 const TAMANHO_LOTE = 500;
 const LOTE_AUTORIA = 2_000;
 const LEITURAS_SIMULTANEAS = 16;
@@ -55,6 +67,17 @@ function lerLista(valor: string | null): string[] {
 
 function mesmoConjunto(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((item) => b.includes(item));
+}
+
+/** Pastas do sparse-checkout para o escopo num commit, sem as subpastas que nunca têm normas. */
+async function pastasDoCheckoutNoCommit(git: RepositorioGit, escopo: readonly string[], commit: string): Promise<string[]> {
+  const pastas: string[] = [];
+  for (const entrada of pastasDoCheckout(escopo)) {
+    const subpastas: string[] = [];
+    for await (const pasta of git.pastas(commit, entrada)) subpastas.push(pasta);
+    for (const pasta of pastasDoCheckoutDaEntrada(entrada, subpastas)) pastas.push(pasta);
+  }
+  return pastas.sort();
 }
 
 /** Entradas que as duas listas cobrem. */
@@ -160,9 +183,11 @@ async function lerAutoria(
 }
 
 /**
- * Sincroniza o clone e o índice: clona ou ajusta o sparse-checkout, roda `git pull --ff-only`,
- * indexa o que mudou desde o commit indexado e as entradas novas do escopo, lê a autoria
- * e grava o commit novo só no fim. Rodar de novo sem mudanças não altera nada.
+ * Sincroniza o clone e o índice: clona se preciso, busca o ramo com `git fetch`, ajusta o
+ * sparse-checkout pelas árvores do commit buscado (sem as pastas que nunca têm normas, como
+ * federal/_fonte), avança com `git merge --ff-only`, indexa o que mudou desde o commit
+ * indexado e as entradas novas do escopo, lê a autoria e grava o commit novo só no fim.
+ * Rodar de novo sem mudanças não altera nada.
  */
 export async function sincronizar(deps: DependenciasSync, configuracao: ConfiguracaoSync): Promise<RelatorioSync> {
   const inicio = deps.relogio.agora().getTime();
@@ -185,14 +210,20 @@ export async function sincronizar(deps: DependenciasSync, configuracao: Configur
         'Use o mesmo LEIS_REMOTO do clone, ou apague a pasta de LEIS_CLONE e o índice para clonar de novo.',
       );
     }
-    deps.log('info', 'ajustando o sparse-checkout', { escopo });
-    await deps.git.definirPastas(pastasDoCheckout(escopo));
   } else {
     deps.log('info', 'clonando o acervo (clone parcial, sem blobs)', { remoto: configuracao.remoto, escopo });
-    await deps.git.clonar(pastasDoCheckout(escopo));
+    await deps.git.clonar();
   }
-  deps.log('info', 'atualizando com git pull --ff-only');
-  await deps.git.atualizar();
+  deps.log('info', 'buscando o ramo no remoto com git fetch');
+  const alvo = await deps.git.buscar();
+  // O checkout sai das árvores do commit buscado, antes de os arquivos chegarem. Assim o git
+  // nunca baixa o conteúdo de uma pasta sem normas, nem no sync em que ela aparece no acervo,
+  // e uma pasta nova de normas já está no checkout quando o sync lê os arquivos dela.
+  const pastas = await pastasDoCheckoutNoCommit(deps.git, escopo, alvo);
+  deps.log('info', 'ajustando o sparse-checkout', { escopo, pastas: pastas.length });
+  await deps.git.definirPastas(pastas);
+  deps.log('info', 'avançando o clone com git merge --ff-only');
+  await deps.git.avancar(alvo);
   const head = await deps.git.head();
 
   const { gravador } = deps;

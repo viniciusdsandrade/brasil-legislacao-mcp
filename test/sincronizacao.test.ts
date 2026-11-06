@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, appendFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, appendFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -212,5 +212,64 @@ describe('sincronização com um repositório git local', () => {
     expect(relatorio).toMatchObject({ escopo: ['estaduais/SP/leis-ordinarias'], corpo: ['estaduais/SP/leis-ordinarias'], normas: 2 });
     expect(indice.arquivosDeFalhas()).toEqual(['estaduais/SP/_falhas.jsonl']);
     expect(indice.porCaminho(CAMINHO_SP_1880)).not.toBeNull();
+  });
+
+  it('nunca baixa uma pasta "_" que chega do remoto e traz a pasta nova de normas', async () => {
+    const caminhoLc = 'federal/leis-complementares/2006/lcp-123-2006-12-14.md';
+    const caminhoFonte = 'federal/_fonte/lote-1/fonte.html';
+    colocar('federal/_fonte/lote-1/lei-8078.html', CAMINHO_CDC);
+    writeFileSync(join(origem, caminhoFonte), '<html>fonte que nunca entra no clone</html>\n');
+    writeFileSync(join(origem, 'federal/_auditoria.json'), '{}\n');
+    colocar(caminhoLc, CAMINHO_CC);
+    // Uma norma de outra esfera muda no mesmo commit: ela fica fora do escopo deste sync.
+    const caminhoDeOutraEsfera = 'estaduais/PB/leis-ordinarias/2025/lei-ordinaria-100-2025-id1.md';
+    appendFileSync(join(origem, caminhoDeOutraEsfera), '\nTexto que este clone nunca baixa.\n');
+    commitar('Acrescenta as fontes, uma auditoria e uma pasta nova');
+    // No clone, a pasta federal ainda está inteira no checkout. O sync busca o commit novo,
+    // tira _fonte do checkout pelas árvores dele e só então traz os arquivos.
+    const relatorio = await sync(['federal']);
+    expect(relatorio).toMatchObject({ escopo: ['federal'], normas: 3 });
+    expect(git(clone, ['sparse-checkout', 'list']).trim().split('\n')).toEqual(['federal/leis-complementares', 'federal/leis-ordinarias']);
+    expect(existsSync(join(clone, 'federal/_fonte'))).toBe(false);
+    // O conteúdo de _fonte e o da norma de outra esfera não foram baixados, nem de passagem
+    // (o resumo de mudanças do merge baixaria os dois). O rev-list com --missing não busca o que falta.
+    const ausentes = git(clone, ['rev-list', '--objects', '--missing=print', 'HEAD']).split('\n');
+    for (const caminho of [caminhoFonte, caminhoDeOutraEsfera]) {
+      const blob = git(clone, ['ls-tree', 'HEAD', '--', caminho]).split(/\s+/)[2];
+      expect(blob, caminho).toMatch(/^[0-9a-f]{40,64}$/);
+      expect(ausentes, caminho).toContain(`?${blob}`);
+    }
+    // O modo cone traz os arquivos da pasta acima de cada pasta, como os _falhas.jsonl.
+    expect(existsSync(join(clone, 'federal/_auditoria.json'))).toBe(true);
+    expect(indice.porCaminho(caminhoLc)).not.toBeNull();
+    const deNovo = await sync(['federal']);
+    expect(deNovo).toMatchObject({ modo: 'sem_mudancas', normas: 3 });
+  });
+
+  it('um clone novo já nasce sem as pastas que começam com "_"', async () => {
+    const outroClone = join(raiz, 'clone-novo');
+    const remoto = `file://${origem}`;
+    const outroIndice = abrirIndiceEscrita(join(raiz, 'indice-novo.sqlite'));
+    try {
+      const relatorio = await sincronizar(
+        {
+          git: new GitLocal({ binario: 'git', diretorio: outroClone, remoto, ramo: 'main' }),
+          gravador: outroIndice,
+          leitor: new LeitorDoClone(outroClone),
+          relogio: { agora: () => new Date() },
+          log: () => undefined,
+        },
+        { remoto, ramo: 'main', escopo: ['constituicao', 'federal'], corpo: [] },
+      );
+      expect(relatorio).toMatchObject({ modo: 'completo', normas: 4 });
+      expect(existsSync(join(outroClone, 'federal/_fonte'))).toBe(false);
+      expect(existsSync(join(outroClone, 'constituicao.md'))).toBe(true);
+      // O blob de _fonte não veio no clone parcial. O rev-list com --missing não busca o que falta.
+      const blob = git(outroClone, ['ls-tree', 'HEAD', '--', 'federal/_fonte/lote-1/lei-8078.html']).split(/\s+/)[2];
+      expect(blob).toMatch(/^[0-9a-f]{40,64}$/);
+      expect(git(outroClone, ['rev-list', '--objects', '--missing=print', 'HEAD']).split('\n')).toContain(`?${blob}`);
+    } finally {
+      outroIndice.fechar();
+    }
   });
 });

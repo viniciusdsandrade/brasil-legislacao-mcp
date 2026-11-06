@@ -32,7 +32,7 @@ export function argumentosDeClone(remoto: string, ramo: string, diretorio: strin
   return ['clone', '--filter=blob:none', '--sparse', '--no-tags', '--branch', ramo, '--', remoto, diretorio];
 }
 
-/** Git do clone local. Só leitura do remoto: clone, sparse-checkout, pull --ff-only, diff, ls-tree e log. */
+/** Git do clone local. Só leitura do remoto: clone, sparse-checkout, fetch, merge --ff-only, diff, ls-tree e log. */
 export class GitLocal implements RepositorioGit {
   constructor(private readonly opcoes: OpcoesGit) {}
 
@@ -88,8 +88,7 @@ export class GitLocal implements RepositorioGit {
     }
   }
 
-  async clonar(pastas: readonly string[]): Promise<void> {
-    validarPathspecs(pastas);
+  async clonar(): Promise<void> {
     await mkdir(dirname(this.opcoes.diretorio), { recursive: true });
     let resultado: ResultadoProcesso;
     try {
@@ -108,7 +107,6 @@ export class GitLocal implements RepositorioGit {
         'Confira a rede e LEIS_REMOTO. Apague a pasta LEIS_CLONE se um clone anterior ficou pela metade.',
       );
     }
-    await this.definirPastas(pastas);
   }
 
   async definirPastas(pastas: readonly string[]): Promise<void> {
@@ -117,8 +115,20 @@ export class GitLocal implements RepositorioGit {
     await this.git(['sparse-checkout', 'set', '--cone', '--stdin'], entrada);
   }
 
-  async atualizar(): Promise<void> {
-    await this.git(['pull', '--ff-only', '--no-rebase', '--no-tags', 'origin', this.opcoes.ramo]);
+  async buscar(): Promise<string> {
+    // O filtro do clone parcial vale também aqui: vêm commits e árvores, sem blobs.
+    await this.git(['fetch', '--no-tags', 'origin', this.opcoes.ramo]);
+    const commit = (await this.git(['rev-parse', '--verify', 'FETCH_HEAD^{commit}'])).trim();
+    validarCommit(commit);
+    return commit;
+  }
+
+  async avancar(commit: string): Promise<void> {
+    validarCommit(commit);
+    // Com o fetch feito antes, equivale ao `git pull --ff-only`. O --no-stat é necessário: para
+    // montar o resumo de mudanças (diffstat), o git baixaria o conteúdo de todo arquivo alterado
+    // no acervo, também fora das pastas do checkout.
+    await this.git(['merge', '--ff-only', '--no-stat', commit]);
   }
 
   async head(): Promise<string> {
@@ -162,15 +172,25 @@ export class GitLocal implements RepositorioGit {
     }
   }
 
-  async *arquivos(commit: string, pathspecs: readonly string[]): AsyncIterable<string> {
+  /** Lista caminhos de um commit com `git ls-tree -r`. Com soPastas, lista só as árvores (-d). */
+  private async *lsTree(commit: string, pathspecs: readonly string[], soPastas: boolean): AsyncIterable<string> {
     validarCommit(commit);
     validarPathspecs(pathspecs);
-    const argumentos = [...this.base(), 'ls-tree', '-r', '-z', '--name-only', commit, '--', ...pathspecs];
+    const argumentos = [...this.base(), 'ls-tree', '-r', ...(soPastas ? ['-d'] : []), '-z', '--name-only', commit, '--', ...pathspecs];
     try {
       yield* fluxo(this.opcoes.binario, argumentos, { ambiente: this.ambiente, separador: '\0' });
     } catch (erro) {
       throw this.erroDeGit(erro, 'ls-tree');
     }
+  }
+
+  pastas(commit: string, pathspec: string): AsyncIterable<string> {
+    // O clone parcial já tem todas as árvores: listar pastas não baixa nenhum blob.
+    return this.lsTree(commit, [pathspec], true);
+  }
+
+  arquivos(commit: string, pathspecs: readonly string[]): AsyncIterable<string> {
+    return this.lsTree(commit, pathspecs, false);
   }
 
   async *logAutoria(pathspecs: readonly string[], intervalo: string | null): AsyncIterable<string> {

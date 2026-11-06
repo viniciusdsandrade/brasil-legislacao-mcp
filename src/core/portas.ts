@@ -122,9 +122,16 @@ export interface RepositorioGit {
   existe(): Promise<boolean>;
   /** URL do remoto origin do clone, ou null. */
   remotoAtual(): Promise<string | null>;
-  clonar(pastas: readonly string[]): Promise<void>;
+  /** Clone parcial, sem blobs, e esparso: só os arquivos da raiz vão para o disco. */
+  clonar(): Promise<void>;
+  /** Pastas do sparse-checkout em modo cone. */
   definirPastas(pastas: readonly string[]): Promise<void>;
-  atualizar(): Promise<void>;
+  /** Pastas sob um pathspec num commit, em qualquer nível, a própria pasta incluída. Lê só árvores, sem baixar blobs. */
+  pastas(commit: string, pathspec: string): AsyncIterable<string>;
+  /** Busca o ramo no remoto sem mexer nos arquivos do clone. Devolve o commit da ponta do ramo. */
+  buscar(): Promise<string>;
+  /** Avança o ramo local até o commit, só por fast-forward, e traz os arquivos das pastas do checkout. */
+  avancar(commit: string): Promise<void>;
   head(): Promise<string>;
   temCommit(commit: string): Promise<boolean>;
   mudancas(de: string, ate: string, pathspecs: readonly string[]): AsyncIterable<Mudanca>;

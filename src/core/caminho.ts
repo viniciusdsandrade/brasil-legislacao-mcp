@@ -192,9 +192,60 @@ export function falhasAncestrais(pathspec: string): string[] {
   return saida;
 }
 
-/** Pastas para o sparse-checkout em modo cone. Os arquivos da raiz sempre entram. */
+/** Entradas do escopo que viram pastas do sparse-checkout. Os arquivos da raiz sempre entram. */
 export function pastasDoCheckout(escopo: readonly string[]): string[] {
   return escopo.filter((entrada) => entrada !== 'constituicao');
+}
+
+/** Nome de pasta com as mesmas letras de um segmento de LEIS_ESCOPO (ENTRADA_ESCOPO). */
+const SEGMENTO_DE_ESCOPO = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+function nomeDaPasta(pasta: string): string {
+  return pasta.slice(pasta.lastIndexOf('/') + 1);
+}
+
+/** Pasta que nunca tem norma: o nome começa com "_", "." ou espaço, ou tem caractere proibido. */
+function pastaSemNormas(pasta: string): boolean {
+  return !segmentoValido(nomeDaPasta(pasta));
+}
+
+/**
+ * Pastas do sparse-checkout em modo cone para uma entrada do escopo. `pastas` são as pastas
+ * da entrada no commit, em qualquer nível, como lista o `git ls-tree -r -d`. Uma pasta que tem,
+ * em algum nível, uma subpasta sem normas (como federal/_fonte, com mais de 1,6 GiB) dá lugar
+ * às suas subpastas válidas. Assim o git não baixa nem grava no disco o que o índice ignora.
+ * O modo cone continua trazendo os arquivos das pastas acima de cada pasta, como os _falhas.jsonl.
+ * Todo nome devolvido tem as letras de uma entrada de LEIS_ESCOPO: os nomes vêm da árvore do
+ * acervo, e o adaptador git só aceita essas letras.
+ */
+export function pastasDoCheckoutDaEntrada(entrada: string, pastas: readonly string[]): string[] {
+  const filhas = new Map<string, string[]>();
+  for (const pasta of pastas) {
+    if (!pasta.startsWith(`${entrada}/`)) continue;
+    const mae = pasta.slice(0, pasta.lastIndexOf('/'));
+    const irmas = filhas.get(mae);
+    if (irmas === undefined) filhas.set(mae, [pasta]);
+    else irmas.push(pasta);
+  }
+  const suja = new Map<string, boolean>();
+  const temPastaSemNormas = (pasta: string): boolean => {
+    let valor = suja.get(pasta);
+    if (valor === undefined) {
+      valor = (filhas.get(pasta) ?? []).some((filha) => pastaSemNormas(filha) || temPastaSemNormas(filha));
+      suja.set(pasta, valor);
+    }
+    return valor;
+  };
+  const expandir = (pasta: string): string[] => {
+    if (!temPastaSemNormas(pasta)) return [pasta];
+    const validas = (filhas.get(pasta) ?? []).filter((filha) => !pastaSemNormas(filha));
+    // A pasta fica inteira em dois casos. Sem subpasta válida: o modo cone não traz só os
+    // arquivos de uma pasta. Com subpasta de nome fora do padrão do escopo (espaço, acento):
+    // o sync baixa a mais, mas não para.
+    if (validas.length === 0 || validas.some((filha) => !SEGMENTO_DE_ESCOPO.test(nomeDaPasta(filha)))) return [pasta];
+    return validas.flatMap(expandir);
+  };
+  return expandir(entrada);
 }
 
 /** Verdadeiro quando o caminho (arquivo ou pasta) fica dentro de alguma entrada do escopo. */
