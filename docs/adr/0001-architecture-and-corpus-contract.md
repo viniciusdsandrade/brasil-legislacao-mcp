@@ -238,6 +238,7 @@ The index now keeps the legal force of the source in the column `vigencia_fonte`
 1. The item has `vigencia_na_fonte` in words (`em vigor`, `sem vigor`, `parcialmente em vigor`) when the source gives it. The compact item also has `revogada: true` when the header marks the norm as revoked.
 2. `leis_obter` gives a notice when the source marks the norm as not in force or partially in force.
 3. The filter `revogada: true` selects the norms with `revogada: true` in the header or with `sem_vigor` in the source. The filter `revogada: false` removes these norms and keeps the norms without information. Before, `revogada: false` selected only the norms with `revogada: false` in the header, and almost all decrees were out of the result.
+4. The filter does not read the key `situacao`, because it is free text. On 2026-11-06, 5,604 federal norms have `revogada: false` and the status `Reeditada`, `Reeditada com alteração` or `Sem Eficácia`. They are provisional measures and resolutions of the Chamber of Deputies. They stay in the result of `revogada: false`, and the item shows `situacao`. For this reason the compact item does not show `revogada: false`: it does not mean that the norm is in force.
 
 The index schema has version 4 for this change and for D26, so an index of version 3 is made again. The table `normas` of an old index gets the new column when the sync opens the index.
 
