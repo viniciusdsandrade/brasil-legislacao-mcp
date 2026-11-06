@@ -60,8 +60,8 @@ jobs:
             echo "Use com npx:"
             echo
             echo '```sh'
-            echo "LEIS_ESCOPO=constituicao,federal npx -y ${url} sync"
-            echo "npx -y ${url} serve"
+            echo "LEIS_ESCOPO=constituicao,federal npx -y --allow-remote=all ${url} sync"
+            echo "npx -y --allow-remote=all ${url} serve"
             echo '```'
             echo
             echo "As instruções de cada cliente MCP estão na pasta clients do repositório."
@@ -72,7 +72,7 @@ jobs:
         run: |
           url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/leis-mcp-${GITHUB_REF_NAME#v}.tgz"
           cd "$(mktemp -d)"
-          npx -y "$url" --version
+          npx -y --allow-remote=all "$url" --version
 
       - name: Publica no registro do npm
         if: ${{ env.NPM_TOKEN != '' }}
