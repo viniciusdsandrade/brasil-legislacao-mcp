@@ -221,6 +221,14 @@ For the text of a law, the rule for laws applies as before. A section label coun
 
 On 2026-11-06, the new rules change 8,971 of the 11,700 derived summaries of `jurisprudencia`. They change no summary of a law in the 191,564 files of `federal` and in 14,943 files of `estaduais/RR`, `municipais/RJ`, `reguladores/aneel` and `tratados`. Two limits stay. The joined paragraphs of TST keep the hyphens of the line breaks of the PDF (`gratifi- cação`). The two files of `jurisprudencia/regimentos` are texts with articles, and they get the first paragraph of the document. The index schema has version 3 for this change, so an index of version 2 is made again.
 
+### D24. Provision labels with partial emphasis
+
+The batches of the corpus from October 2026 keep the bold of the source (fidelity of rendering). In these files, the emphasis covers only part of a label: `**Art**. 1º`, `**Art.** 4º`, `Art. **3º**`, `**§** 2º`, `**I** –`. The parser accepted only `Art. 1º` and `**Art. 1º**`. On 2026-11-06, it read no article in 83,658 of the 189,400 federal norms that have articles (44%), for example Decreto 3.000/1999 with 1,004 articles. For these norms, `leis_obter` gave `dispositivo_nao_encontrado` and could not make pages by article. In the decrees of the State of São Paulo, the parser did not read the items with a bold Roman numeral.
+
+The parser now removes the Markdown emphasis from the first 24 characters of a line before it looks for a label. This is only to find the provision: the text that `leis_obter` returns keeps the original marks. In `federal`, the parser reads 983,208 articles (560,444 before), and no norm with articles stays without an article. In a sample of 5,773 norms of `estaduais/SP`, the paragraphs, items and letters that the parser reads go from 20,878 to 33,372. The files with the old format do not change: the Constitution keeps its 424 articles and 2,867 units. The index does not keep the provisions, so this change needs no new sync.
+
+A letter after the number is a suffix (`Art. 4º-A`). When a space separates the number and the hyphen, the letter is a suffix only when punctuation follows it: `**Art. 4º** -B. As fundações` is article 4º-B, and `**Artigo 2º** -O crédito aberto` is article 2º, because the dash starts the sentence. Before, the bold hid these cases, and 11 federal files had an article with a wrong key (4º-B read as 4º).
+
 ## Consequences
 
 1. A new harness needs only a folder in `clients/`. The folder has guides for Claude Code, Codex, Grok, Antigravity and the GLM clients.
