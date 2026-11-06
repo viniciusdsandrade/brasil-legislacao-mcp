@@ -12,7 +12,7 @@ The Antigravity IDE and the `agy` command use the same MCP configuration.
 You can also use the command line. Flags must come before the name:
 
 ```sh
-agy mcp add --env LEIS_ESCOPO=constituicao,federal leis -- npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.2.1/leis-mcp-0.2.1.tgz serve
+agy mcp add --env LEIS_ESCOPO=constituicao,federal leis -- npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.3.0/leis-mcp-0.3.0.tgz serve
 ```
 
 After the command, open the raw config and make sure that `LEIS_ESCOPO` has the full value `constituicao,federal`.

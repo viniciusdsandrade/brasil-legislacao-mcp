@@ -6,13 +6,13 @@
 2. Run the first sync. It clones the corpus and makes the index:
 
    ```sh
-   LEIS_ESCOPO=constituicao,federal npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.2.1/leis-mcp-0.2.1.tgz sync
+   LEIS_ESCOPO=constituicao,federal npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.3.0/leis-mcp-0.3.0.tgz sync
    ```
 
 3. Add the server to Claude Code for all your projects:
 
    ```sh
-   claude mcp add leis -s user -e LEIS_ESCOPO=constituicao,federal -- npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.2.1/leis-mcp-0.2.1.tgz serve
+   claude mcp add leis -s user -e LEIS_ESCOPO=constituicao,federal -- npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.3.0/leis-mcp-0.3.0.tgz serve
    ```
 
 4. Start Claude Code and run `/mcp`. Make sure that `leis` is connected. If the first start is slow, start Claude Code with `MCP_TIMEOUT=120000`. The value is in milliseconds.
@@ -22,8 +22,8 @@
 Use the same variables for `sync` and for the server. For example, to add the laws of the State of São Paulo:
 
 ```sh
-LEIS_ESCOPO=constituicao,federal,estaduais/SP npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.2.1/leis-mcp-0.2.1.tgz sync
-claude mcp add leis -s user -e LEIS_ESCOPO=constituicao,federal,estaduais/SP -- npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.2.1/leis-mcp-0.2.1.tgz serve
+LEIS_ESCOPO=constituicao,federal,estaduais/SP npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.3.0/leis-mcp-0.3.0.tgz sync
+claude mcp add leis -s user -e LEIS_ESCOPO=constituicao,federal,estaduais/SP -- npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.3.0/leis-mcp-0.3.0.tgz serve
 ```
 
 ## Use in one project only

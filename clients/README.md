@@ -15,7 +15,7 @@ Each folder has the installation files for one MCP client. The core of leis-mcp 
 All clients start the same package from the GitHub release:
 
 ```text
-https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.2.1/leis-mcp-0.2.1.tgz
+https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.3.0/leis-mcp-0.3.0.tgz
 ```
 
 In this folder, the text `<SPEC>` means this URL. The package is not in the npm registry.
@@ -28,7 +28,7 @@ All commands use `npx -y --allow-remote=all <SPEC>`. Since npm 12, npm refuses a
 2. Run the first sync. Use the same variables that you give to the server:
 
    ```sh
-   LEIS_ESCOPO=constituicao,federal npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.2.1/leis-mcp-0.2.1.tgz sync
+   LEIS_ESCOPO=constituicao,federal npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.3.0/leis-mcp-0.3.0.tgz sync
    ```
 
 3. Add the server to the client. Follow the README of the client.
@@ -45,7 +45,7 @@ The first `npx` run downloads the package and `better-sqlite3`. This can take on
 Start the server in a terminal and keep the terminal open:
 
 ```sh
-LEIS_ESCOPO=constituicao,federal npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.2.1/leis-mcp-0.2.1.tgz http
+LEIS_ESCOPO=constituicao,federal npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.3.0/leis-mcp-0.3.0.tgz http
 ```
 
 The server listens at `http://127.0.0.1:3920/mcp`. It accepts only local connections and has no authentication. Do not expose it to a network. Each client README shows the HTTP configuration. Use stdio or HTTP for the name `leis`, not both.
