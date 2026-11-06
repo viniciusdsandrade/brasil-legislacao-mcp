@@ -17,7 +17,7 @@ O leis-mcp é um servidor MCP para o acervo de legislação brasileira [vinicius
 
 ## Situação
 
-Versão 0.1.0. Use com `npx` a partir da release do GitHub (veja [Instalação](#instalação)). O pacote não está no registro do npm.
+Versão 0.2.0. Use com `npx` a partir da release do GitHub (veja [Instalação](#instalação)). O pacote não está no registro do npm.
 
 ## Requisitos
 
@@ -30,7 +30,7 @@ Versão 0.1.0. Use com `npx` a partir da release do GitHub (veja [Instalação](
 1. Rode o primeiro sync. Ele clona o acervo e cria o índice:
 
    ```sh
-   LEIS_ESCOPO=constituicao,federal npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.1.0/leis-mcp-0.1.0.tgz sync
+   LEIS_ESCOPO=constituicao,federal npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.2.0/leis-mcp-0.2.0.tgz sync
    ```
 
    A opção `--allow-remote=all` deixa o npm instalar o pacote pela URL da release. Desde o npm 12, o npm recusa um pacote de URL sem essa opção, com o erro `EALLOWREMOTE`. O npm 10 e o npm 11 também aceitam a opção.

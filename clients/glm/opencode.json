@@ -3,7 +3,7 @@
   "mcp": {
     "leis": {
       "type": "local",
-      "command": ["npx", "-y", "--allow-remote=all", "https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.1.0/leis-mcp-0.1.0.tgz", "serve"],
+      "command": ["npx", "-y", "--allow-remote=all", "https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.2.0/leis-mcp-0.2.0.tgz", "serve"],
       "environment": {
         "LEIS_ESCOPO": "constituicao,federal"
       },
