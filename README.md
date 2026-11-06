@@ -30,12 +30,14 @@ Versão 0.1.0. Use com `npx` a partir da release do GitHub (veja [Instalação](
 1. Rode o primeiro sync. Ele clona o acervo e cria o índice:
 
    ```sh
-   LEIS_ESCOPO=constituicao,federal npx -y https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.1.0/leis-mcp-0.1.0.tgz sync
+   LEIS_ESCOPO=constituicao,federal npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.1.0/leis-mcp-0.1.0.tgz sync
    ```
+
+   A opção `--allow-remote=all` deixa o npm instalar o pacote pela URL da release. Desde o npm 12, o npm recusa um pacote de URL sem essa opção, com o erro `EALLOWREMOTE`. O npm 10 e o npm 11 também aceitam a opção.
 
 2. Conecte o seu cliente MCP. A pasta [clients](clients/README.md) tem guias para Claude Code, Codex, Grok, Antigravity e os clientes que usam GLM. Os guias estão em inglês.
 
-Para usar o código-fonte, clone este repositório e rode `npm ci`. O script `prepare` compila o `dist`. Depois, use `node dist/cli.js` no lugar de `npx -y <pacote>`.
+Para usar o código-fonte, clone este repositório e rode `npm ci`. O script `prepare` compila o `dist`. Depois, use `node dist/cli.js` no lugar de `npx -y --allow-remote=all <pacote>`.
 
 ## Comandos
 
@@ -50,16 +52,19 @@ Para usar o código-fonte, clone este repositório e rode `npm ci`. O script `pr
 ### Como o sync funciona
 
 1. Clona o acervo com `git clone --filter=blob:none --sparse`. O git não baixa o conteúdo dos arquivos fora do escopo.
-2. Configura um sparse checkout em modo cone a partir de `LEIS_ESCOPO`.
-3. Roda `git pull --ff-only`.
-4. Lê as mudanças entre o commit indexado e o `HEAD` e as indexa em lotes.
-5. Indexa por inteiro as entradas novas do escopo.
-6. Lê a autoria nos commits da base inicial do histórico.
-7. Grava o commit novo no índice só no fim.
+2. Busca os commits novos com `git fetch`. O fetch não traz o conteúdo dos arquivos.
+3. Configura um sparse checkout em modo cone a partir de `LEIS_ESCOPO` e das pastas do commit buscado. As subpastas que começam com `_`, como `federal/_fonte` (mais de 1,6 GiB), ficam fora do checkout, porque não têm normas. O git não baixa o conteúdo delas.
+4. Avança o clone com `git merge --ff-only --no-stat`. O git baixa só o conteúdo dos arquivos do checkout que mudaram.
+5. Lê as mudanças entre o commit indexado e o `HEAD` e as indexa em lotes.
+6. Indexa por inteiro as entradas novas do escopo.
+7. Lê a autoria nos commits da base inicial do histórico.
+8. Grava o commit novo no índice só no fim.
 
 Se o sync parar no meio, rode de novo. Cada gravação é idempotente. Um segundo sync sem mudanças no acervo não altera nada.
 
-O histórico completo, sem o conteúdo dos arquivos, ocupa cerca de 295 MiB. O servidor lê só o índice e o clone locais. Ele nunca chama a API do GitHub.
+Quando uma versão nova do leis-mcp muda o índice, o servidor responde com o erro `indice_desatualizado`. Rode o sync com as mesmas variáveis. Ele refaz o índice a partir do clone local.
+
+O histórico completo, sem o conteúdo dos arquivos, ocupa cerca de 295 MiB. O modo cone também traz os arquivos soltos das pastas acima de cada pasta do checkout. Em `federal/`, esses arquivos são registros de auditoria do acervo, com cerca de 560 MiB, e o índice não os usa. O servidor lê só o índice e o clone locais. Ele nunca chama a API do GitHub.
 
 ## Configuração
 
@@ -151,13 +156,15 @@ O plano para os agentes está em [docs/plan.md](docs/plan.md). A análise do ace
 ```sh
 npm ci
 npm run typecheck
-npm test
 npm run build
+npm test
 ```
+
+Compile antes dos testes: o teste do stdio executa o `dist/cli.js`.
 
 Uma tag `vX.Y.Z` dispara o workflow de release. Ele roda os testes, empacota o projeto, executa o pacote com `npx` e o anexa a uma release do GitHub. Quando o segredo `NPM_TOKEN` existe, o workflow também publica no registro do npm com provenance.
 
-O workflow do GitHub Actions roda esses passos no Node 22 e no Node 24.
+O workflow do GitHub Actions roda esses passos no Node 22, no Node 24 e no Node 26. Outro job instala o npm 12 e executa o pacote por uma URL, como na release.
 
 ## Licença
 

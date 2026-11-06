@@ -92,7 +92,7 @@ The core in `src/core/` has the domain rules, the use cases and the ports. The c
 
 ### D3. Local corpus, read-only
 
-The server reads only the local clone and the local index. It does not call the GitHub API, because the API has a rate limit. The `sync` command clones with `--filter=blob:none --sparse` and sets a cone sparse checkout from `LEIS_ESCOPO`. The default scope is `constituicao,federal`. A scope entry can be a sphere, a UF (`estaduais/SP`), a city or a kind folder. Root files (`COBERTURA.md`, `PROGRESSO.md`) are always present in cone mode.
+The server reads only the local clone and the local index. It does not call the GitHub API, because the API has a rate limit. The `sync` command clones with `--filter=blob:none --sparse` and sets a cone sparse checkout from `LEIS_ESCOPO`. The default scope is `constituicao,federal`. A scope entry can be a sphere, a UF (`estaduais/SP`), a city or a kind folder. Root files (`COBERTURA.md`, `PROGRESSO.md`) are always present in cone mode. Subfolders that start with `_` stay out of the checkout (D22).
 
 We keep the full history, because `leis_autoria` needs the base commits. The cost is about 295 MiB.
 
@@ -104,8 +104,8 @@ We use SQLite FTS5 through `better-sqlite3`. Its bundled SQLite (3.53.4) has FTS
 
 `sync` is a separate command. It does these steps:
 
-1. Clone, or set the sparse checkout again when the scope changes.
-2. Run `git pull --ff-only`.
+1. Clone when there is no clone. Run `git fetch` for the branch. The fetch brings commits and trees, not blobs.
+2. Set the sparse checkout from the scope and from the trees of the fetched commit (D22). Then run `git merge --ff-only --no-stat` to that commit. Git downloads only the blobs of the checkout files that changed.
 3. Read the changes from the indexed commit to `HEAD` with `git diff --name-status --no-renames`. `--no-renames` prevents a download of blobs in the partial clone.
 4. Index new scope entries with `git ls-tree`. Index again the entries whose body status changes, and all entries when the indexed commit is not in the history. For each of these entries, remove the norms that are in the index but not in the tree.
 5. Before step 4, write as scope and body only the entries that stay complete. Thus, if the sync stops, the next sync reads these entries again, also when the scope goes back to the old value.
@@ -192,7 +192,34 @@ The cone mode of the sparse checkout also brings the files of the parent folders
 
 ### D21. Distribution
 
-A tag `vX.Y.Z` starts a release workflow. It runs the tests, runs `npm pack`, starts the package with `npx` and attaches the package to a GitHub release. Clients start the package with `npx -y <release URL> serve`. We did not publish to the npm registry: the registry shows the email of the npm account in the package metadata, and the owner of the account must decide this. When the secret `NPM_TOKEN` exists, the same workflow publishes to the registry with provenance.
+A tag `vX.Y.Z` starts a release workflow. It runs the tests, runs `npm pack`, starts the package with `npx` and attaches the package to a GitHub release. Clients start the package with `npx -y --allow-remote=all <release URL> serve`. Since npm 12, the default of `allow-remote` is `none`, and npm refuses a package from a URL with the error `EALLOWREMOTE`. The option `--allow-remote=all` allows the URL for that command only. npm 10 and npm 11 accept the option without a warning. A CI job installs npm 12 and runs the package from a URL. We did not publish to the npm registry: the registry shows the email of the npm account in the package metadata, and the owner of the account must decide this. When the secret `NPM_TOKEN` exists, the same workflow publishes to the registry with provenance.
+
+### D22. Checkout without the `_` folders
+
+The corpus keeps data that is not a norm in folders that start with `_` inside the sphere folders. On 2026-11-06, `federal/` has 88 of these folders. `federal/_fonte` alone has more than 1.6 GiB, and its norm folders have about 0.8 GiB. A cone entry brings all its subfolders, so the default scope downloaded and wrote to disk more than two times the norms.
+
+The sync reads the folders of each scope entry from the trees with `git ls-tree -r -d`. The trees are in the blobless clone, so this reads no blob. An entry that has a `_` folder at any level is replaced by its valid subfolders. A folder without valid subfolders stays complete, because the cone mode cannot bring only the files of one folder. A folder name from the tree goes to git only when it has the characters of a scope entry. If a valid subfolder has a different name (a space or an accent), its parent folder stays complete: the sync downloads more, but it does not stop.
+
+The order of the steps is important. The sync runs `git fetch`, reads the folders from the trees of the fetched commit, sets the checkout, and only then moves the clone forward with `git merge --ff-only --no-stat`. Thus git never downloads the contents of a `_` folder, also in the sync in which the folder first shows in the corpus, and a new norm folder is on the disk before the sync reads its files.
+
+Before this change, the sync ran `git pull --ff-only`. The pull prints a diffstat at the end. To make the diffstat, git downloads the blob of each file that changed in the corpus, also outside the checkout. A sync with the scope `constituicao,federal` downloaded 5,534 blobs of `estaduais` in this way. `--no-stat` prevents this.
+
+The cone mode still brings the loose files of each parent folder. This keeps the `_falhas.jsonl` files (D19). It also brings 494 audit files at the top of `federal/`, about 560 MiB. Only a change in the corpus can remove this cost.
+
+### D23. Summary of jurisprudence
+
+Almost no jurisprudence file has an `ementa` key, so the index derives the summary from the body. The rule for laws took a line of the CNJ JSON record (`"decisao": "MERITO",`), the situation (`APROVADO`, `Cancelado`, `Afetado`), a standard notice of suspension, the branch of law of an STJ summary, or one line of a paragraph that the PDF conversion broke (TST, TNU). In a sync of `jurisprudencia/stf` and `jurisprudencia/stj` on 2026-11-06, 6,285 of 9,613 summaries had one of these problems. The summary is in the FTS5 index, so a search by subject did not find these decisions.
+
+A file with the key `tribunal` in the header is a court record, not the text of a law. All 11,700 files of `jurisprudencia` have this key. The derived summary of a court record comes from these rules:
+
+1. It is the first paragraph of the section `Ementa`, `Enunciado`, `Questão` (`questaoSubmetidaAJulgamento`), `Tese` or of the line with the number of the summary (`SÚMULA 23`, `SÚMULA Nº 10 - Cancelada (...)`), in this order, or the field `textoEmenta` of the CNJ JSON record. A paragraph joins its lines up to the empty line. The JSON record is read to its end, because it grows with the history of the case.
+2. `não informado` makes a section empty. When the record has these sections and all of them are empty, the norm has no summary. Other text of the record, such as the situation or a notice, is not a summary.
+3. The line with the number of the summary is a label only when the number is the number of the norm. A citation of a different summary at the start of a line is text. A line `Art. N` is also text.
+4. When the record has no section (TST, the summaries of TNU, TRF4), the summary is the first paragraph of text with its lines joined.
+
+For the text of a law, the rule for laws applies as before. A section label counts only before the first article. The rule skips the lines of ```` ```json ```` blocks and the value of `situacao`. A ```` ```text ```` block is text of the norm (for example, the preformatted text of a PDF), so the rule reads it. The verb of the rule for laws still matches the start of a word, because nominal summaries (`Autorização para...`) and OCR text (`ALTERAA REDAÇÃO`) need it.
+
+On 2026-11-06, the new rules change 8,971 of the 11,700 derived summaries of `jurisprudencia`. They change no summary of a law in the 191,564 files of `federal` and in 14,943 files of `estaduais/RR`, `municipais/RJ`, `reguladores/aneel` and `tratados`. Two limits stay. The joined paragraphs of TST keep the hyphens of the line breaks of the PDF (`gratifi- cação`). The two files of `jurisprudencia/regimentos` are texts with articles, and they get the first paragraph of the document. The index schema has version 3 for this change, so an index of version 2 is made again.
 
 ## Consequences
 

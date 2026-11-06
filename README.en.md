@@ -30,12 +30,14 @@ Version 0.1.0. Get it with `npx` from the GitHub release (see [Install](#install
 1. Run the first sync. It clones the corpus and makes the index:
 
    ```sh
-   LEIS_ESCOPO=constituicao,federal npx -y https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.1.0/leis-mcp-0.1.0.tgz sync
+   LEIS_ESCOPO=constituicao,federal npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.1.0/leis-mcp-0.1.0.tgz sync
    ```
+
+   The option `--allow-remote=all` lets npm install the package from the release URL. Since npm 12, npm refuses a package from a URL without this option, with the error `EALLOWREMOTE`. npm 10 and npm 11 also accept the option.
 
 2. Connect your MCP client. The folder [clients](clients/README.md) has a guide for Claude Code, Codex, Grok, Antigravity and the GLM clients.
 
-To use the source code, clone this repository and run `npm ci`. The `prepare` script builds `dist`. Then use `node dist/cli.js` in place of `npx -y <package>`.
+To use the source code, clone this repository and run `npm ci`. The `prepare` script builds `dist`. Then use `node dist/cli.js` in place of `npx -y --allow-remote=all <package>`.
 
 ## Commands
 
@@ -50,16 +52,19 @@ To use the source code, clone this repository and run `npm ci`. The `prepare` sc
 ### How sync works
 
 1. It clones the corpus with `git clone --filter=blob:none --sparse`. Git does not download file contents outside the scope.
-2. It sets a cone sparse checkout from `LEIS_ESCOPO`.
-3. It runs `git pull --ff-only`.
-4. It reads the changes from the indexed commit to `HEAD` and indexes them in batches.
-5. It indexes new scope entries in full.
-6. It reads the authorship from the base commits of the history.
-7. It writes the new commit to the index only at the end.
+2. It gets the new commits with `git fetch`. The fetch does not bring file contents.
+3. It sets a cone sparse checkout from `LEIS_ESCOPO` and from the folders of the fetched commit. Subfolders that start with `_`, such as `federal/_fonte` (more than 1.6 GiB), stay out of the checkout, because they have no norms. Git does not download their contents.
+4. It moves the clone forward with `git merge --ff-only --no-stat`. Git downloads only the contents of the checkout files that changed.
+5. It reads the changes from the indexed commit to `HEAD` and indexes them in batches.
+6. It indexes new scope entries in full.
+7. It reads the authorship from the base commits of the history.
+8. It writes the new commit to the index only at the end.
 
 If the sync stops, run it again. Each write is idempotent. A second sync without changes in the corpus changes nothing.
 
-The full history without file contents is about 295 MiB. The server reads only the local index and the local clone. It never calls the GitHub API.
+When a new version of leis-mcp changes the index, the server replies with the error `indice_desatualizado`. Run the sync with the same variables. It makes the index again from the local clone.
+
+The full history without file contents is about 295 MiB. The cone mode also brings the loose files of the folders above each checkout folder. In `federal/`, these files are audit records of the corpus, about 560 MiB, and the index does not use them. The server reads only the local index and the local clone. It never calls the GitHub API.
 
 ## Configuration
 
@@ -151,13 +156,15 @@ The plan for the agents is in [docs/plan.md](docs/plan.md). The analysis of the 
 ```sh
 npm ci
 npm run typecheck
-npm test
 npm run build
+npm test
 ```
+
+Build before the tests: the stdio test runs `dist/cli.js`.
 
 A tag `vX.Y.Z` starts the release workflow. It runs the tests, packs the package, checks it with `npx` and attaches it to a GitHub release. When the secret `NPM_TOKEN` exists, the workflow also publishes to the npm registry with provenance.
 
-The GitHub Actions workflow runs these steps on Node 22 and Node 24.
+The GitHub Actions workflow runs these steps on Node 22, Node 24 and Node 26. Another job installs npm 12 and runs the package from a URL, as from the release.
 
 ## License
 

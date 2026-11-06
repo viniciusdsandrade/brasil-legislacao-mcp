@@ -22,7 +22,7 @@ Add this entry to the `mcp` object of `~/.config/crush/crush.json`:
 "leis": {
   "type": "stdio",
   "command": "npx",
-  "args": ["-y", "https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.1.0/leis-mcp-0.1.0.tgz", "serve"],
+  "args": ["-y", "--allow-remote=all", "https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.1.0/leis-mcp-0.1.0.tgz", "serve"],
   "env": { "LEIS_ESCOPO": "constituicao,federal" }
 }
 ```
@@ -32,7 +32,7 @@ For the HTTP server, use `"leis": { "type": "http", "url": "http://127.0.0.1:392
 ## ZCode
 
 1. Open Settings, then "MCP Servers", then "New".
-2. Select stdio. Set the command to `npx` and the arguments to `-y`, `<SPEC>` and `serve`. `<SPEC>` is the package URL of the [clients README](../README.md#package).
+2. Select stdio. Set the command to `npx` and the arguments to `-y`, `--allow-remote=all`, `<SPEC>` and `serve`. `<SPEC>` is the package URL of the [clients README](../README.md#package).
 3. Add the variable `LEIS_ESCOPO` with the value `constituicao,federal`.
 
 ZCode can also import the servers of Claude Code, Codex and OpenCode.

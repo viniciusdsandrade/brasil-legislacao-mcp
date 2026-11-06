@@ -66,8 +66,8 @@ The first target client is Claude Code. Codex, Grok, Antigravity, GLM and other 
 
 - Outputs: `src/adaptadores/processo.ts`, `src/adaptadores/git.ts`, `src/core/sincronizacao.ts`.
 - Steps:
-  1. Clone with `--filter=blob:none --sparse`. Set the sparse checkout from `LEIS_ESCOPO` (sphere and UF).
-  2. Update with `git pull --ff-only`.
+  1. Clone with `--filter=blob:none --sparse`. Get the new commits with `git fetch`.
+  2. Set the sparse checkout from `LEIS_ESCOPO` (sphere and UF) and the trees of the fetched commit, without the folders that start with `_`. Move the clone forward with `git merge --ff-only --no-stat`.
   3. Read the changes from the indexed commit to `HEAD` with `git diff --name-status --no-renames`.
   4. Index the changes in batches. Do not keep the full list in memory.
   5. Read the authorship from the base commits with `git log --no-renames --diff-filter=A --full-diff --grep=^Autoria:`.
@@ -146,6 +146,9 @@ After the ports in `src/core/portas.ts` are stable, three agents can do WP3, WP4
 | Official SDK, latest stable line | `package.json` | CI typecheck |
 | Core without MCP | `src/core/` | `test/arquitetura.test.ts` |
 | Partial clone and sparse checkout by sphere and UF | `src/adaptadores/git.ts` | `test/sincronizacao.test.ts` |
+| Checkout without the `_` folders | `src/core/caminho.ts`, `src/core/sincronizacao.ts` | `test/nucleo.test.ts`, `test/sincronizacao.test.ts` |
+| No download of file contents outside the checkout | `src/adaptadores/git.ts`, `src/core/sincronizacao.ts` | `test/sincronizacao.test.ts` |
+| Summary of a court record from its sections or its first paragraph | `src/core/documento.ts` | `test/nucleo.test.ts` |
 | SQLite FTS5 with `remove_diacritics 2` | `src/adaptadores/sqlite/indice.ts` | `test/indice.test.ts` |
 | Separate, incremental and idempotent sync | `src/core/sincronizacao.ts` | `test/sincronizacao.test.ts` |
 | Logs on stderr only | `src/log.ts` | `test/arquitetura.test.ts` |
@@ -161,12 +164,12 @@ After the ports in `src/core/portas.ts` are stable, three agents can do WP3, WP4
 | Safe FTS5 query | `src/core/consulta-fts.ts` | `test/seguranca.test.ts` |
 | Claude Code installation | `clients/claude-code/` | review |
 | Streamable HTTP transport, local only | `src/adaptadores/mcp/http.ts` | `test/http.test.ts` |
-| Distribution with `npx` | `.github/workflows/release.yml` | CI pack and `npx` check |
+| Distribution with `npx`, also on npm 12 | `.github/workflows/release.yml`, `.github/workflows/ci.yml` | CI pack and `npx` check, npm 12 job |
 | Other harnesses without changes to the core | `clients/` | review |
 
 ## 6. Status
 
-All work packages are done. The Streamable HTTP adapter, the client folders for Codex, Grok, Antigravity and GLM, and the release workflow are done. ADR 0001 (D17 to D21) has the decisions.
+All work packages are done. The Streamable HTTP adapter, the client folders for Codex, Grok, Antigravity and GLM, and the release workflow are done. ADR 0001 (D17 to D23) has the decisions.
 
 ## 7. Later work
 

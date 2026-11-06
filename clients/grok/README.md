@@ -8,7 +8,7 @@ This guide is for the official `grok` command of xAI.
 2. Add the server with the command line. Put the server command after `--`, so that `grok` does not read `-y`:
 
    ```sh
-   grok mcp add -e LEIS_ESCOPO=constituicao,federal leis -- npx -y https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.1.0/leis-mcp-0.1.0.tgz serve
+   grok mcp add -e LEIS_ESCOPO=constituicao,federal leis -- npx -y --allow-remote=all https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.1.0/leis-mcp-0.1.0.tgz serve
    ```
 
    Add `-s project` to write `.grok/config.toml` in the current project. The default is `~/.grok/config.toml`.
