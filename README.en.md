@@ -13,6 +13,7 @@ leis-mcp is an MCP server for the Brazilian legislation corpus [viniciusdsandrad
 - It reads a full norm in pages of articles, or one provision: article, paragraph, item or letter.
 - It counts norms by sphere, kind, UF, agency, court, city and decade.
 - It shows the gaps of the corpus for a slice, and the state of the local index.
+- It gives a notice when the official source marks a norm as not in force, and when the text can be incomplete.
 - It shows who signed a norm, from the base commits of the corpus history.
 
 ## Status
@@ -58,7 +59,8 @@ To use the source code, clone this repository and run `npm ci`. The `prepare` sc
 5. It reads the changes from the indexed commit to `HEAD` and indexes them in batches.
 6. It indexes new scope entries in full.
 7. It reads the authorship from the base commits of the history.
-8. It writes the new commit to the index only at the end.
+8. It reads the registry of pending integrity of the corpus, directly from git, when the registry changed. A failure in this step does not stop the sync: the next sync reads the registry again.
+9. It writes the new commit to the index only at the end.
 
 If the sync stops, run it again. Each write is idempotent. A second sync without changes in the corpus changes nothing.
 
@@ -122,8 +124,11 @@ The server also has the resource template `leis://{caminho}`. The path is encode
 
 ## Response contract
 
-- Items are compact: `caminho`, `titulo`, `tipo`, `numero`, `data`, `uf`, a short `ementa`, `situacao`, `fonte`, `versao_texto`, `baixado_em` and `ocr`. Use `formato: completo` to get all fields and the URI.
+- Items are compact: `caminho`, `titulo`, `tipo`, `numero`, `data`, `uf`, a short `ementa`, `situacao`, the legal force, `fonte`, `versao_texto`, `baixado_em` and `ocr`. Use `formato: completo` to get all fields and the URI.
 - Each result has `fonte`, `versao_texto` and `baixado_em`. OCR text has `ocr: true` and a notice.
+- Legal force: the item has `vigencia_na_fonte` (`em vigor`, `sem vigor` or `parcialmente em vigor`) when the official source gives it, and `revogada: true` when the header marks the norm as revoked. Without these fields, the legal force is unknown. `leis_obter` gives a notice when the source marks the norm as not in force.
+- The filter `revogada: true` gives the norms that are revoked or not in force in the source. `revogada: false` removes these norms; the norms without information about legal force stay.
+- Integrity: a norm in the registry of pending integrity of the corpus has `integralidade: pendente`. The text is preserved, but it is not validated as complete; in most cases, the text may not have the annex that the norm approves. `leis_obter` gives the reason from the registry and a notice. The resource `leis://` of a pending norm ends with the same notice. `leis_cobertura` counts the pending norms of the slice.
 - `leis_obter` removes struck text by default and tells how many parts it removed. Use `incluir_tachado: true` to see them. A provision that is only in struck text (revoked or changed) is available only with `incluir_tachado: true`, with a notice.
 - A citation without a sphere prefers the federal norm. When the result is from another sphere, the result has a notice.
 - A result without items tells the coverage of the slice. Absence in the local corpus does not prove that a norm does not exist.

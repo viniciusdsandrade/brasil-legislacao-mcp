@@ -150,6 +150,8 @@ After the ports in `src/core/portas.ts` are stable, three agents can do WP3, WP4
 | No download of file contents outside the checkout | `src/adaptadores/git.ts`, `src/core/sincronizacao.ts` | `test/sincronizacao.test.ts` |
 | Summary of a court record from its sections or its first paragraph | `src/core/documento.ts` | `test/nucleo.test.ts` |
 | Provision labels with partial Markdown emphasis | `src/core/dispositivos.ts` | `test/nucleo.test.ts` |
+| Legal force from the source in items, notices and the `revogada` filter | `src/core/indexacao.ts`, `src/core/servico.ts`, `src/adaptadores/sqlite/indice.ts` | `test/vigencia.test.ts` |
+| Pending integrity from the registry of the corpus | `src/core/integralidade.ts`, `src/core/sincronizacao.ts` | `test/vigencia.test.ts`, `test/sincronizacao.test.ts` |
 | SQLite FTS5 with `remove_diacritics 2` | `src/adaptadores/sqlite/indice.ts` | `test/indice.test.ts` |
 | Separate, incremental and idempotent sync | `src/core/sincronizacao.ts` | `test/sincronizacao.test.ts` |
 | Logs on stderr only | `src/log.ts` | `test/arquitetura.test.ts` |
@@ -170,7 +172,7 @@ After the ports in `src/core/portas.ts` are stable, three agents can do WP3, WP4
 
 ## 6. Status
 
-All work packages are done. The Streamable HTTP adapter, the client folders for Codex, Grok, Antigravity and GLM, and the release workflow are done. ADR 0001 (D17 to D24) has the decisions.
+All work packages are done. The Streamable HTTP adapter, the client folders for Codex, Grok, Antigravity and GLM, and the release workflow are done. ADR 0001 (D17 to D26) has the decisions.
 
 ## 7. Later work
 

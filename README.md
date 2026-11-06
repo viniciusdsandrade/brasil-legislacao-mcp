@@ -13,6 +13,7 @@ O leis-mcp é um servidor MCP para o acervo de legislação brasileira [vinicius
 - Lê uma norma inteira em páginas de artigos, ou um único dispositivo: artigo, parágrafo, inciso ou alínea.
 - Conta normas por esfera, tipo, UF, órgão, tribunal, município e década.
 - Mostra as lacunas do acervo em um recorte e o estado do índice local.
+- Avisa quando a fonte oficial marca a norma como sem vigor e quando o texto pode estar incompleto.
 - Mostra quem assinou uma norma, a partir dos commits da base inicial do histórico do acervo.
 
 ## Situação
@@ -58,7 +59,8 @@ Para usar o código-fonte, clone este repositório e rode `npm ci`. O script `pr
 5. Lê as mudanças entre o commit indexado e o `HEAD` e as indexa em lotes.
 6. Indexa por inteiro as entradas novas do escopo.
 7. Lê a autoria nos commits da base inicial do histórico.
-8. Grava o commit novo no índice só no fim.
+8. Lê o registro de pendências de integralidade do acervo, direto do git, quando ele mudou. Uma falha nessa leitura não para o sync: o sync seguinte lê o registro de novo.
+9. Grava o commit novo no índice só no fim.
 
 Se o sync parar no meio, rode de novo. Cada gravação é idempotente. Um segundo sync sem mudanças no acervo não altera nada.
 
@@ -122,8 +124,11 @@ O servidor também tem o template de recurso `leis://{caminho}`. O caminho vai c
 
 ## Contrato de resposta
 
-- Os itens são compactos: `caminho`, `titulo`, `tipo`, `numero`, `data`, `uf`, uma `ementa` curta, `situacao`, `fonte`, `versao_texto`, `baixado_em` e `ocr`. Use `formato: completo` para receber todos os campos e a URI.
+- Os itens são compactos: `caminho`, `titulo`, `tipo`, `numero`, `data`, `uf`, uma `ementa` curta, `situacao`, a vigência, `fonte`, `versao_texto`, `baixado_em` e `ocr`. Use `formato: completo` para receber todos os campos e a URI.
 - Todo resultado tem `fonte`, `versao_texto` e `baixado_em`. Texto obtido por OCR vem com `ocr: true` e um aviso.
+- Vigência: o item traz `vigencia_na_fonte` (`em vigor`, `sem vigor` ou `parcialmente em vigor`) quando a fonte oficial informa, e `revogada: true` quando o cabeçalho marca a norma como revogada. Sem esses campos, a vigência é desconhecida. O `leis_obter` avisa quando a fonte marca a norma como sem vigor.
+- O filtro `revogada: true` traz as normas revogadas ou sem vigor segundo a fonte. `revogada: false` tira essas normas; as normas sem informação de vigência continuam.
+- Integralidade: uma norma do registro de pendências do acervo vem com `integralidade: pendente`. O texto está preservado, mas ainda não foi validado como completo; na maioria dos casos, o texto pode não trazer o anexo que a norma aprova. O `leis_obter` traz o motivo do registro e um aviso. O recurso `leis://` de uma norma pendente termina com o mesmo aviso. O `leis_cobertura` conta as pendências do recorte.
 - O `leis_obter` remove o texto tachado por padrão e informa quantos trechos removeu. Use `incluir_tachado: true` para vê-los. Um dispositivo que só existe em texto tachado, porque foi revogado ou alterado, só aparece com `incluir_tachado: true`, e vem com aviso.
 - Uma citação sem esfera prefere a norma federal. Quando o resultado é de outra esfera, ele vem com aviso.
 - Um resultado sem itens informa a cobertura do recorte. A ausência no acervo local não prova que a norma não existe.
