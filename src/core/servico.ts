@@ -12,6 +12,7 @@ import { lerCobertura, lerProgresso, progressoDoRecorte, resumirFalhas, type Res
 import { montarConsultaFts, padroesDaBusca } from './consulta-fts.js';
 import { codificarCursor, decodificarCursor, numeroDoCursor } from './cursor.js';
 import {
+  chaveDeArtigo,
   estruturar,
   localizarDispositivo,
   paginar,
@@ -191,6 +192,16 @@ function lerData(valor: unknown, campo: string, fimDoAno: boolean): string | und
   const data = dataIso(texto);
   if (data === null) throw entradaInvalida(`Data inválida em ${campo}: "${texto}".`, 'Use o formato AAAA-MM-DD ou só o ano, AAAA.');
   return data;
+}
+
+/** Verdadeiro quando os dois valores apontam para o mesmo artigo: "5" e "5º". Um valor inválido não casa. */
+function mesmoArtigo(a: string, b: string | undefined): boolean {
+  if (b === undefined) return false;
+  try {
+    return chaveDeArtigo(a) === chaveDeArtigo(b);
+  } catch {
+    return false;
+  }
 }
 
 interface FiltroLido {
@@ -522,11 +533,14 @@ export class ServicoLeis {
     const registroDePendencias = pendencia === null ? null : indice.resumoDasPendencias();
     if (pendencia !== null) avisos.push(avisoDaPendencia(pendencia, registroDePendencias?.data ?? null));
     const citado = referencia.forma === 'citacao' ? referencia.dispositivo : null;
+    const artigo = textoOpcional(entrada.artigo, 'artigo', 40) ?? citado?.artigo;
+    // O parágrafo, o inciso e a alínea da citação são do artigo citado: com outro artigo no parâmetro, eles não valem.
+    const doArtigoCitado = citado !== null && artigo !== undefined && mesmoArtigo(artigo, citado.artigo) ? citado : null;
     const pedido = {
-      artigo: textoOpcional(entrada.artigo, 'artigo', 40) ?? citado?.artigo,
-      paragrafo: textoOpcional(entrada.paragrafo, 'paragrafo', 40) ?? citado?.paragrafo,
-      inciso: textoOpcional(entrada.inciso, 'inciso', 40) ?? citado?.inciso,
-      alinea: textoOpcional(entrada.alinea, 'alinea', 20) ?? citado?.alinea,
+      artigo,
+      paragrafo: textoOpcional(entrada.paragrafo, 'paragrafo', 40) ?? doArtigoCitado?.paragrafo,
+      inciso: textoOpcional(entrada.inciso, 'inciso', 40) ?? doArtigoCitado?.inciso,
+      alinea: textoOpcional(entrada.alinea, 'alinea', 20) ?? doArtigoCitado?.alinea,
       bloco: textoOpcional(entrada.bloco, 'bloco', 80) ?? (referencia.forma === 'citacao' ? (referencia.bloco ?? undefined) : undefined),
     };
     if (pedido.artigo === undefined && (pedido.paragrafo ?? pedido.inciso ?? pedido.alinea) !== undefined) {
