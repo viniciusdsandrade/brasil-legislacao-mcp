@@ -996,11 +996,15 @@ export class ServicoLeis {
       if (constituicao !== null) return { norma: constituicao, avisos: [] };
       throw this.foraDoEscopo('constituicao', estado);
     }
-    if (referencia.numero === null) {
-      throw entradaInvalida('A citação não tem o número da norma.', 'Informe o número, por exemplo "Lei 8.078/1990".');
-    }
     const esfera = extras.esfera ?? referencia.esfera;
     const uf = extras.uf ?? referencia.uf;
+    if (referencia.numero === null) {
+      // Só a citação de constituição estadual chega aqui sem número: a UF escolhe a norma.
+      if (referencia.esfera === 'estaduais' && referencia.pastas.includes('constituicao')) {
+        return this.resolverConstituicaoEstadual(indice, estado, uf);
+      }
+      throw entradaInvalida('A citação não tem o número da norma.', 'Informe o número, por exemplo "Lei 8.078/1990".');
+    }
     const achadas = indice.porReferencia({
       pastas: referencia.pastas,
       numero: referencia.numero,
@@ -1052,6 +1056,23 @@ export class ServicoLeis {
       }
     }
     return { candidatos: achadas, mensagem: 'A referência casa com mais de uma norma.' };
+  }
+
+  /**
+   * Constituição estadual: a citação não tem número, e a UF escolhe a norma. Só a pasta
+   * `constituicao` da UF entra; as constituições anteriores ficam em `constituicoes-historicas`.
+   */
+  private resolverConstituicaoEstadual(indice: ConsultaIndice, estado: EstadoIndice, uf: string | null): Resolucao {
+    if (uf === null) {
+      throw entradaInvalida(
+        'A citação de constituição estadual não diz a UF.',
+        'Informe a sigla da UF na citação, por exemplo "Constituição do Estado de SP", ou no parâmetro uf.',
+      );
+    }
+    const recorte = `estaduais/${uf}/constituicao`;
+    const achadas = indice.buscar({ fts: null, filtro: { esfera: 'estaduais', uf, prefixo: recorte }, limite: 20, deslocamento: 0 });
+    if (achadas.length === 0 && !escopoCobre(estado.escopo, recorte)) throw this.foraDoEscopo(recorte, estado);
+    return this.escolher(achadas, `Constituição do Estado de ${uf}`, estado, false, null);
   }
 
   /** Itens de saída, com a marca das normas que o registro de pendências de integralidade lista. */
