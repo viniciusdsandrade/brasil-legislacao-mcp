@@ -64,7 +64,7 @@ export const ESQUEMA_OBTER: JsonSchemaType = {
     referencia: {
       type: 'string',
       description:
-        'Caminho do acervo (campo caminho de leis_buscar), URI leis://, URN LexML ou citação: "Lei 8.078/1990", "LC 123/2006", "CF art. 5º, XI", "ADCT art. 10", "CDC art. 49", "Súmula 7 do STJ".',
+        'Caminho do acervo (campo caminho de leis_buscar), URI leis://, URN LexML ou citação: "Lei 8.078/1990", "LC 123/2006", "CF art. 5º, XI", "ADCT art. 10", "Constituição do Estado de SP", "CDC art. 49", "Súmula 7 do STJ".',
     },
     artigo: { type: 'string', description: 'Artigo, por exemplo 5, 5º, 4-A ou 1.000. Tem precedência sobre o artigo da citação.' },
     paragrafo: { type: 'string', description: 'Parágrafo: 2, 2º ou único.' },
