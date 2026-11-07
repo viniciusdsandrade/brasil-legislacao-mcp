@@ -116,6 +116,7 @@ Examples of citations for `referencia`:
 - `Lei 8.078/1990`, `Lei nº 8.078, de 11 de setembro de 1990`
 - `LC 123/2006`, `MP 2.200-2/2001`, `Decreto-Lei 5.452/1943`
 - `CF art. 5º, XI`, `art. 5º, XI, da CF`, `ADCT art. 10`
+- `Constituição do Estado de SP`, `Constituição Estadual de MG art. 1º`
 - `CDC art. 49`, `CLT art. 2º`, `LGPD`
 - `Súmula 7 do STJ`, `Súmula Vinculante 13`
 - `urn:lex:br:federal:lei:1990-09-11;8078`

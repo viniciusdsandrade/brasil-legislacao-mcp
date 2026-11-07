@@ -146,7 +146,7 @@ The parser finds articles (`Art.`, `Artigo`), paragraphs (`§`, `Parágrafo úni
 The tools are `leis_buscar`, `leis_obter`, `leis_facetas`, `leis_cobertura` and `leis_autoria`. All have `readOnlyHint` and `idempotentHint`. The analysis gave these changes to the first contract:
 
 1. `leis_buscar` has the parameter `alcance` (`cabecalho` or `texto`). `cabecalho` searches the title and the summary. `texto` searches the body.
-2. `leis_obter` has the parameters `bloco`, `esfera` and `uf`, because a number and a year are not unique across spheres. Without a sphere, a citation prefers the federal norm and tells about the other matches. When the result is from another sphere, the result has a notice. The notice also tells when the federal sphere is not in the local scope.
+2. `leis_obter` has the parameters `bloco`, `esfera` and `uf`, because a number and a year are not unique across spheres. Without a sphere, a citation prefers the federal norm and tells about the other matches. When the result is from another sphere, the result has a notice. The notice also tells when the federal sphere is not in the local scope. A citation of a state constitution has no number: the UF, from the citation or from the parameter `uf`, selects the norm in the folder `constituicao` of the UF.
 3. The items have `ementa_derivada` (D8).
 4. `leis_cobertura` reads the `_falhas.jsonl` files that the sync records.
 5. `leis_autoria` links moved files by `fonte` (D11).
