@@ -3,7 +3,7 @@
 
 [mcp_servers.leis]
 command = "npx"
-args = ["-y", "--allow-remote=all", "https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.3.0/leis-mcp-0.3.0.tgz", "serve"]
+args = ["-y", "--allow-remote=all", "https://github.com/viniciusdsandrade/brasil-legislacao-mcp/releases/download/v0.3.1/leis-mcp-0.3.1.tgz", "serve"]
 env = { LEIS_ESCOPO = "constituicao,federal" }
 # The first npx run can take one minute. The default is 10 seconds.
 startup_timeout_sec = 120
