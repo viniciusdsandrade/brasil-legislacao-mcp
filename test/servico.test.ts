@@ -177,6 +177,18 @@ describe('serviço de consulta', () => {
       expect((primeiro['avisos'] as string[]).join(' ')).toContain('Há outro art. 1º');
     });
 
+    it('com outro artigo no parâmetro, o inciso da citação não vale, e o bloco continua valendo', async () => {
+      const servico = servicoDasFixtures(teste.indice);
+      const outro = objeto((await servico.obter({ referencia: 'CF art. 5º, XI', artigo: '2' }))['dispositivo']);
+      expect(outro['citacao']).toBe('art. 2º');
+      expect(texto(outro['texto'])).toMatch(/^\*\*Art\. 2º\*\* São Poderes da União/);
+      const mesmo = objeto((await servico.obter({ referencia: 'CF art. 5º, XI', artigo: '5' }))['dispositivo']);
+      expect(mesmo['citacao']).toBe('art. 5º, XI');
+      const adct = objeto((await servico.obter({ referencia: 'ADCT art. 10', artigo: '1' }))['dispositivo']);
+      expect(adct['bloco']).toBe('ATO DAS DISPOSIÇÕES CONSTITUCIONAIS TRANSITÓRIAS');
+      expect(texto(adct['texto'])).toMatch(/^\*\*Art\. 1º\*\* O Presidente da República/);
+    });
+
     it('desempata pela esfera e devolve erro acionável quando não acha', async () => {
       const servico = servicoDasFixtures(teste.indice);
       const estadual = await servico.obter({ referencia: 'Lei 8.078/1990', esfera: 'estaduais' });
